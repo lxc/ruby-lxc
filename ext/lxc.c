@@ -1,6 +1,8 @@
 #include <ruby.h>
+#include <linux/sched.h> /* for namespace constants */
 #include <string.h>
 #include <lxc/lxccontainer.h>
+#include <lxc/attach_options.h>
 
 #define SYMBOL(s) ID2SYM(rb_intern(s))
 
@@ -1140,6 +1142,40 @@ Init_lxc(void)
     rb_define_method(Container, "stop", container_stop, 0);
     rb_define_method(Container, "unfreeze", container_unfreeze, 0);
     rb_define_method(Container, "wait", container_wait, -1);
+
+#define LXC_CONTAINER_CONST(c) rb_define_const(Container, #c, LONG2NUM(c))
+
+    /* namespace flags */
+    LXC_CONTAINER_CONST(CLONE_NEWUTS);
+    LXC_CONTAINER_CONST(CLONE_NEWIPC);
+    LXC_CONTAINER_CONST(CLONE_NEWUSER);
+    LXC_CONTAINER_CONST(CLONE_NEWPID);
+    LXC_CONTAINER_CONST(CLONE_NEWNET);
+    LXC_CONTAINER_CONST(CLONE_NEWNS);
+
+    /* attach: environment variable handling */
+    LXC_CONTAINER_CONST(LXC_ATTACH_CLEAR_ENV);
+    LXC_CONTAINER_CONST(LXC_ATTACH_KEEP_ENV);
+
+    /* attach: attach options */
+    LXC_CONTAINER_CONST(LXC_ATTACH_DEFAULT);
+    LXC_CONTAINER_CONST(LXC_ATTACH_DROP_CAPABILITIES);
+    LXC_CONTAINER_CONST(LXC_ATTACH_LSM_EXEC);
+    LXC_CONTAINER_CONST(LXC_ATTACH_LSM_NOW);
+    LXC_CONTAINER_CONST(LXC_ATTACH_MOVE_TO_CGROUP);
+    LXC_CONTAINER_CONST(LXC_ATTACH_REMOUNT_PROC_SYS);
+    LXC_CONTAINER_CONST(LXC_ATTACH_SET_PERSONALITY);
+
+    /* clone: clone flags */
+    LXC_CONTAINER_CONST(LXC_CLONE_COPYHOOKS);
+    LXC_CONTAINER_CONST(LXC_CLONE_KEEPMACADDR);
+    LXC_CONTAINER_CONST(LXC_CLONE_KEEPNAME);
+    LXC_CONTAINER_CONST(LXC_CLONE_SNAPSHOT);
+
+    /* create: create flags */
+    LXC_CONTAINER_CONST(LXC_CREATE_QUIET);
+
+#undef LXC_CONTAINER_CONST
 
     Error = rb_define_class_under(LXC, "Error", rb_eStandardError);
 }
