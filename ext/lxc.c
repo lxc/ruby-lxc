@@ -628,7 +628,7 @@ container_config_item(VALUE self, VALUE rb_key)
     char *key, *value;
     struct container_data *data;
     struct lxc_container *container;
-    VALUE ret;
+    VALUE rb_config;
 
     Data_Get_Struct(self, struct container_data, data);
     container = data->container;
@@ -647,10 +647,11 @@ container_config_item(VALUE self, VALUE rb_key)
         free(value);
         rb_raise(Error, "unable to read configuration file");
     }
-    ret = rb_str_new2(value);
+    rb_config = rb_str_new2(value);
     free(value);
 
-    return ret;
+    /* Return a list in case of multiple lines */
+    return value[len2-1] == '\n' ?  rb_str_split(rb_config, "\n") : rb_config;
 }
 
 static VALUE
@@ -668,7 +669,7 @@ container_keys(VALUE self, VALUE rb_key)
     char *key, *value;
     struct container_data *data;
     struct lxc_container *container;
-    VALUE ret;
+    VALUE rb_keys;
 
     Data_Get_Struct(self, struct container_data, data);
     container = data->container;
@@ -687,10 +688,10 @@ container_keys(VALUE self, VALUE rb_key)
         free(value);
         rb_raise(Error, "unable to read configuration keys");
     }
-    ret = rb_str_new2(value);
+    rb_keys = rb_str_new2(value);
     free(value);
 
-    return ret;
+    return value[len2-1] == '\n' ?  rb_str_split(rb_keys, "\n") : rb_keys;
 }
 
 static VALUE
@@ -855,16 +856,36 @@ container_set_config_item(VALUE self, VALUE rb_key, VALUE rb_value)
     char *key, *value;
     struct container_data *data;
 
-    key = StringValuePtr(rb_key);
-    value = StringValuePtr(rb_value);
-
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = data->container->set_config_item(data->container, key, value);
-    if (!ret)
-        rb_raise(Error, "unable to set configuration item %s to %s", key, value);
-
-    return self;
+    key = StringValuePtr(rb_key);
+    switch (TYPE(rb_value)) {
+    case T_STRING: {
+        value = StringValuePtr(rb_value);
+        ret = data->container->set_config_item(data->container, key, value);
+        if (!ret) {
+            rb_raise(Error, "unable to set configuration item %s to %s",
+                     key, value);
+        }
+        return self;
+    }
+    case T_ARRAY: {
+        size_t i;
+        size_t len = RARRAY_LEN(rb_value);
+        for (i = 0; i < len; i++) {
+            VALUE rb_entry = rb_ary_entry(rb_value, i);
+            char *entry = StringValuePtr(rb_entry);
+            ret = data->container->set_config_item(data->container, key, entry);
+            if (!ret) {
+                rb_raise(Error, "unable to set configuration item %s to %s",
+                        key, entry);
+            }
+        }
+        return self;
+    }
+    default:
+        rb_raise(Error, "configuration value must be either string or array");
+    }
 }
 
 static VALUE
