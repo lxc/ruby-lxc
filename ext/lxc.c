@@ -1,8 +1,9 @@
 #include <ruby.h>
-#include <linux/sched.h> /* for namespace constants */
-#include <string.h>
+#include <linux/personality.h> /* for PER_* constants */
+#include <linux/sched.h>       /* for CLONE_* constants */
 #include <lxc/lxccontainer.h>
 #include <lxc/attach_options.h>
+#include <string.h>
 
 #define SYMBOL(s) ID2SYM(rb_intern(s))
 
@@ -1084,10 +1085,79 @@ container_wait(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+static VALUE
+lxc_default_config_path(VALUE self)
+{
+    return rb_str_new2(lxc_get_default_config_path());
+}
+
+static VALUE
+lxc_version(VALUE self)
+{
+    return rb_str_new2(lxc_get_version());
+}
+
+static VALUE
+lxc_list_containers(int argc, VALUE *argv, VALUE self)
+{
+    int i, num_containers;
+    int active, defined;
+    char *config;
+    char **names;
+    VALUE rb_active, rb_defined, rb_config;
+    VALUE rb_opts;
+    VALUE rb_containers;
+
+    rb_scan_args(argc, argv, "01", &rb_opts);
+
+    if (NIL_P(rb_opts)) {
+        active = 1;
+        defined = 1;
+        config = NULL;
+    } else {
+        Check_Type(rb_opts, T_HASH);
+        rb_active = rb_hash_aref(rb_opts, SYMBOL("active"));
+        active = (rb_active != Qnil) && (rb_active != Qfalse);
+        rb_defined = rb_hash_aref(rb_opts, SYMBOL("defined"));
+        defined = (rb_defined != Qnil) && (rb_defined != Qfalse);
+        rb_config = rb_hash_aref(rb_opts, SYMBOL("config_path"));
+        config = NIL_P(rb_config) ? NULL : StringValuePtr(rb_config);
+    }
+
+    num_containers = 0;
+    if (active && defined)
+        num_containers = list_all_containers(config, &names, NULL);
+    else if (active)
+        num_containers = list_active_containers(config, &names, NULL);
+    else if (defined)
+        num_containers = list_defined_containers(config, &names, NULL);
+    if (num_containers < 0)
+        rb_raise(Error, "failure to list containers");
+
+    rb_containers = rb_ary_new2(num_containers);
+    for (i = 0; i < num_containers; i++)
+        rb_ary_store(rb_containers, i, rb_str_new2(names[i]));
+    free_char_pointer_array(names, num_containers);
+
+    return rb_containers;
+}
+
 void
 Init_lxc(void)
 {
     VALUE LXC = rb_define_module("LXC");
+
+    //rb_define_singleton_method(LXC, "arch_to_personality",
+    //                           lxc_arch_to_personality, 1);
+    //rb_define_singleton_method(LXC, "attach_run_command",
+    //                           lxc_attach_run_command, 0);
+    //rb_define_singleton_method(LXC, "attach_run_shell",
+    //                           lxc_attach_run_shell, 0);
+    rb_define_singleton_method(LXC, "default_config_path",
+                               lxc_default_config_path, 0);
+    rb_define_singleton_method(LXC, "version", lxc_version, 0);
+    rb_define_singleton_method(LXC, "list_containers", lxc_list_containers, -1);
+
     VALUE Container = rb_define_class_under(LXC, "Container", rb_cObject);
     rb_define_alloc_func(Container, container_alloc);
 
