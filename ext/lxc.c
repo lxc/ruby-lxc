@@ -1196,8 +1196,10 @@ Init_lxc(void)
     rb_define_method(Container, "remove_device_node",
                      container_remove_device_node, 0);
     rb_define_method(Container, "save_config", container_save_config, -1);
-    rb_define_method(Container, "cgroup_item=", container_set_cgroup_item, 2);
-    rb_define_method(Container, "config_item=", container_set_config_item, 2);
+    rb_define_method(Container, "set_cgroup_item",
+                     container_set_cgroup_item, 2);
+    rb_define_method(Container, "set_config_item",
+                     container_set_config_item, 2);
     rb_define_method(Container, "config_path=", container_set_config_path, 1);
     rb_define_method(Container, "shutdown", container_shutdown, -1);
     rb_define_method(Container, "snapshot", container_snapshot, -1);
