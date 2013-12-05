@@ -126,7 +126,8 @@ container_init_pid(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
     pid = data->container->init_pid(data->container);
-
+    if (pid < 0)
+        return Qnil;
     return INT2NUM(pid);
 }
 
