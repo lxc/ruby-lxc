@@ -382,7 +382,6 @@ container_attach(int argc, VALUE *argv, VALUE self)
     long ret;
     pid_t pid;
     lxc_attach_options_t *opts;
-    struct lxc_container *container;
     struct container_data *data;
     VALUE block, rb_opts, rb_wait;
 
@@ -391,16 +390,16 @@ container_attach(int argc, VALUE *argv, VALUE self)
     block = rb_block_proc();
 
     rb_scan_args(argc, argv, "01", &rb_opts);
+    rb_wait = rb_hash_delete(rb_opts, SYMBOL("wait"));
     opts = lxc_attach_parse_options(rb_opts);
     if (opts == NULL)
         rb_raise(Error, "unable to parse attach options");
-    rb_wait = rb_hash_aref(rb_opts, SYMBOL("wait"));
     wait = rb_wait == Qnil || rb_wait == Qfalse ? 0 : 1;
 
     Data_Get_Struct(self, struct container_data, data);
-    container = data->container;
 
-    ret = container->attach(container, lxc_attach_exec, &block, opts, &pid);
+    ret = data->container->attach(data->container, lxc_attach_exec,
+                                  (void *)block, opts, &pid);
     if (ret < 0)
         goto out;
 
