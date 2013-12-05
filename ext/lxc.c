@@ -1218,7 +1218,7 @@ Init_lxc(void)
 
     //rb_define_singleton_method(LXC, "arch_to_personality",
     //                           lxc_arch_to_personality, 1);
-    rb_define_singleton_method(LXC, "run_command", lxc_run_command, 0);
+    rb_define_singleton_method(LXC, "run_command", lxc_run_command, 1);
     //rb_define_singleton_method(LXC, "attach_run_shell",
     //                           lxc_attach_run_shell, 0);
     rb_define_singleton_method(LXC, "default_config_path",
