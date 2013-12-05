@@ -77,7 +77,7 @@ container_initialize(int argc, VALUE *argv, VALUE self)
         rb_raise(Error, "error creating container %s", name);
 
     Data_Get_Struct(self, struct container_data, data);
-    container = data->container;
+    data->container = container;
 
     return self;
 }
