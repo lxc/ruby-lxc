@@ -1263,7 +1263,7 @@ Init_lxc(void)
     rb_define_method(Container, "unfreeze", container_unfreeze, 0);
     rb_define_method(Container, "wait", container_wait, -1);
 
-#define LXC_CONTAINER_CONST(c) rb_define_const(Container, #c, LONG2NUM(c))
+#define LXC_CONTAINER_CONST(c) rb_define_const(LXC, #c, LONG2NUM(c))
 
     /* namespace flags */
     LXC_CONTAINER_CONST(CLONE_NEWUTS);
