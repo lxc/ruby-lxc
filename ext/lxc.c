@@ -78,9 +78,6 @@ container_initialize(int argc, VALUE *argv, VALUE self)
     Data_Get_Struct(self, struct container_data, data);
     container = data->container;
 
-    if (rb_block_given_p())
-        rb_yield(self);
-
     return self;
 }
 
