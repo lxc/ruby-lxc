@@ -284,65 +284,89 @@ lxc_attach_parse_options(VALUE rb_opts)
         return opts;
 
     rb_attach_flags = rb_hash_aref(rb_opts, SYMBOL("flags"));
-    if (is_integer(rb_attach_flags))
-        opts->attach_flags = NUM2INT(rb_attach_flags);
-    else
-        goto err;
+    if (!NIL_P(rb_attach_flags)) {
+        if (is_integer(rb_attach_flags))
+            opts->attach_flags = NUM2INT(rb_attach_flags);
+        else
+            goto err;
+    }
     rb_namespaces = rb_hash_aref(rb_opts, SYMBOL("namespaces"));
-    if (is_integer(rb_namespaces))
-        opts->namespaces = NUM2INT(rb_namespaces);
-    else
-        goto err;
+    if (!NIL_P(rb_namespaces)) {
+        if (is_integer(rb_namespaces))
+            opts->namespaces = NUM2INT(rb_namespaces);
+        else
+            goto err;
+    }
     rb_personality = rb_hash_aref(rb_opts, SYMBOL("personality"));
-    if (is_integer(rb_personality))
-        opts->personality = NUM2INT(rb_personality);
-    else
-        goto err;
+    if (!NIL_P(rb_personality)) {
+        if (is_integer(rb_personality))
+            opts->personality = NUM2INT(rb_personality);
+        else
+            goto err;
+    }
     rb_initial_cwd = rb_hash_aref(rb_opts, SYMBOL("initial_cwd"));
-    if (is_string(rb_initial_cwd))
-        opts->initial_cwd = StringValuePtr(rb_initial_cwd);
-    else
-        goto err;
+    if (!NIL_P(rb_initial_cwd)) {
+        if (is_string(rb_initial_cwd))
+            opts->initial_cwd = StringValuePtr(rb_initial_cwd);
+        else
+            goto err;
+    }
     rb_uid = rb_hash_aref(rb_opts, SYMBOL("uid"));
-    if (is_integer(rb_uid))
-        opts->uid = NUM2INT(rb_uid);
-    else
-        goto err;
+    if (!NIL_P(rb_uid)) {
+        if (is_integer(rb_uid))
+            opts->uid = NUM2INT(rb_uid);
+        else
+            goto err;
+    }
     rb_gid = rb_hash_aref(rb_opts, SYMBOL("gid"));
-    if (is_integer(rb_gid))
-        opts->gid = NUM2INT(rb_gid);
-    else
-        goto err;
+    if (!NIL_P(rb_gid)) {
+        if (is_integer(rb_gid))
+            opts->gid = NUM2INT(rb_gid);
+        else
+            goto err;
+    }
     rb_env_policy = rb_hash_aref(rb_opts, SYMBOL("env_policy"));
-    if (is_integer(rb_env_policy))
-        opts->env_policy = NUM2INT(rb_env_policy);
-    else
-        goto err;
+    if (!NIL_P(rb_env_policy)) {
+        if (is_integer(rb_env_policy))
+            opts->env_policy = NUM2INT(rb_env_policy);
+        else
+            goto err;
+    }
     rb_extra_env_vars = rb_hash_aref(rb_opts, SYMBOL("extra_env_vars"));
-    if (is_string_array(rb_extra_env_vars))
-        opts->extra_env_vars = ruby_to_c_string_array(rb_extra_env_vars);
-    else
-        goto err;
+    if (!NIL_P(rb_extra_env_vars)) {
+        if (is_string_array(rb_extra_env_vars))
+            opts->extra_env_vars = ruby_to_c_string_array(rb_extra_env_vars);
+        else
+            goto err;
+    }
     rb_extra_keep_env = rb_hash_aref(rb_opts, SYMBOL("extra_keep_env"));
-    if (is_string_array(rb_extra_keep_env))
-        opts->extra_keep_env = ruby_to_c_string_array(rb_extra_keep_env);
-    else
-        goto err;
+    if (!NIL_P(rb_extra_keep_env)) {
+        if (is_string_array(rb_extra_keep_env))
+            opts->extra_keep_env = ruby_to_c_string_array(rb_extra_keep_env);
+        else
+            goto err;
+    }
     rb_stdin = rb_hash_aref(rb_opts, SYMBOL("stdin"));
-    if (is_io(rb_stdin))
-        opts->stdin_fd = io_fileno(rb_stdin);
-    else
-        goto err;
+    if (!NIL_P(rb_stdin)) {
+        if (is_io(rb_stdin))
+            opts->stdin_fd = io_fileno(rb_stdin);
+        else
+            goto err;
+    }
     rb_stdout = rb_hash_aref(rb_opts, SYMBOL("stdout"));
-    if (is_io(rb_stdout))
-        opts->stdout_fd = io_fileno(rb_stdout);
-    else
-        goto err;
+    if (!NIL_P(rb_stdout)) {
+        if (is_io(rb_stdout))
+            opts->stdout_fd = io_fileno(rb_stdout);
+        else
+            goto err;
+    }
     rb_stderr = rb_hash_aref(rb_opts, SYMBOL("stderr"));
-    if (is_io(rb_stderr))
-        opts->stderr_fd = io_fileno(rb_stderr);
-    else
-        goto err;
+    if (!NIL_P(rb_stderr)) {
+        if (is_io(rb_stderr))
+            opts->stderr_fd = io_fileno(rb_stderr);
+        else
+            goto err;
+    }
 
     return opts;
 
