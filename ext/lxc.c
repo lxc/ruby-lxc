@@ -1024,21 +1024,27 @@ container_start(int argc, VALUE *argv, VALUE self)
     struct container_data *data;
     VALUE rb_use_init, rb_daemonize, rb_close_fds, rb_args, rb_opts;
 
+    use_init = 0;
+    daemonize = 1;
+    close_fds = 0;
+    args = NULL;
+    rb_args = Qnil;
+
     rb_scan_args(argc, argv, "01", &rb_opts);
-    if (!NIL_P(rb_opts) && TYPE(rb_opts) != T_HASH)
-        rb_raise(Error, "unable to read start options");
+    if (!NIL_P(rb_opts)) {
+        Check_Type(rb_opts, T_HASH);
+        rb_use_init = rb_hash_aref(rb_opts, SYMBOL("use_init"));
+        use_init = (rb_use_init != Qnil) && (rb_use_init != Qfalse);
 
-    rb_use_init = rb_hash_aref(rb_opts, SYMBOL("use_init"));
-    use_init = (rb_use_init != Qnil) && (rb_use_init != Qfalse);
+        rb_daemonize = rb_hash_aref(rb_opts, SYMBOL("daemonize"));
+        daemonize = (rb_daemonize != Qnil) && (rb_daemonize != Qfalse);
 
-    rb_daemonize = rb_hash_aref(rb_opts, SYMBOL("daemonize"));
-    daemonize = (rb_daemonize != Qnil) && (rb_daemonize != Qfalse);
+        rb_close_fds = rb_hash_aref(rb_opts, SYMBOL("close_fds"));
+        close_fds = (rb_close_fds != Qnil) && (rb_close_fds != Qfalse);
 
-    rb_close_fds = rb_hash_aref(rb_opts, SYMBOL("close_fds"));
-    close_fds = (rb_close_fds != Qnil) && (rb_close_fds != Qfalse);
-
-    rb_args = rb_hash_aref(rb_opts, SYMBOL("args"));
-    args = NIL_P(rb_args) ? NULL : ruby_to_c_string_array(rb_args);
+        rb_args = rb_hash_aref(rb_opts, SYMBOL("args"));
+        args = NIL_P(rb_args) ? NULL : ruby_to_c_string_array(rb_args);
+    }
 
     Data_Get_Struct(self, struct container_data, data);
 
