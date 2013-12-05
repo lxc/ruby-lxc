@@ -242,7 +242,7 @@ is_string_array(VALUE v)
 static int
 is_io(VALUE v)
 {
-    return !strcmp(rb_obj_classname(v), "IO");
+    return rb_obj_is_kind_of(v, rb_cIO) == Qtrue;
 }
 
 static void
