@@ -1137,6 +1137,24 @@ container_wait(int argc, VALUE *argv, VALUE self)
 }
 
 static VALUE
+lxc_run_command(VALUE self, VALUE rb_command)
+{
+    int ret;
+    lxc_attach_command_t cmd;
+    VALUE rb_program;
+
+    rb_program = rb_ary_shift(rb_command);
+    cmd.program = StringValuePtr(rb_program);
+    cmd.argv = ruby_to_c_string_array(rb_command);
+
+    ret = lxc_attach_run_command(&cmd);
+    if (ret == -1)
+        rb_raise(Error, "unable to run command");
+    /* NOTREACHED */
+    return Qnil;
+}
+
+static VALUE
 lxc_default_config_path(VALUE self)
 {
     return rb_str_new2(lxc_get_default_config_path());
@@ -1200,8 +1218,7 @@ Init_lxc(void)
 
     //rb_define_singleton_method(LXC, "arch_to_personality",
     //                           lxc_arch_to_personality, 1);
-    //rb_define_singleton_method(LXC, "attach_run_command",
-    //                           lxc_attach_run_command, 0);
+    rb_define_singleton_method(LXC, "run_command", lxc_run_command, 0);
     //rb_define_singleton_method(LXC, "attach_run_shell",
     //                           lxc_attach_run_shell, 0);
     rb_define_singleton_method(LXC, "default_config_path",
