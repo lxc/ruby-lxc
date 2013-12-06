@@ -24,22 +24,23 @@ ruby_to_c_string_array(VALUE rb_arr)
     char **arr;
 
     len = RARRAY_LEN(rb_arr);
-    arr = malloc(len);
+    arr = calloc(len + 1, sizeof(char *));
     if (arr == NULL)
         rb_raise(rb_eNoMemError, "unable to allocate array");
     for (i = 0; i < len; i++) {
         VALUE s = rb_ary_entry(rb_arr, i);
         arr[i] = strdup(StringValuePtr(s));
     }
+    arr[len] = NULL;
 
     return arr;
 }
 
 static void
-free_char_pointer_array(char **arr, size_t len)
+free_c_string_array(char **arr)
 {
     size_t i;
-    for (i = 0; i < len; i++)
+    for (i = 0; arr[i] != NULL; i++)
         free(arr[i]);
     free(arr);
 }
@@ -253,14 +254,10 @@ lxc_attach_free_options(lxc_attach_options_t *opts)
         return;
     if (opts->initial_cwd)
         free(opts->initial_cwd);
-    if (opts->extra_env_vars) {
-        free_char_pointer_array(opts->extra_env_vars,
-                                RARRAY_LEN(opts->extra_env_vars));
-    }
-    if (opts->extra_keep_env) {
-        free_char_pointer_array(opts->extra_keep_env,
-                                RARRAY_LEN(opts->extra_keep_env));
-    }
+    if (opts->extra_env_vars)
+        free_c_string_array(opts->extra_env_vars);
+    if (opts->extra_keep_env)
+        free_c_string_array(opts->extra_keep_env);
     free(opts);
 }
 
@@ -484,7 +481,7 @@ container_clone(int argc, VALUE *argv, VALUE self)
               : ruby_to_c_string_array(rb_hook_args);
 
     if (hook_args)
-        free_char_pointer_array(hook_args, RARRAY_LEN(hook_args));
+        free_c_string_array(hook_args);
 
     Data_Get_Struct(self, struct container_data, data);
     container = data->container;
@@ -576,7 +573,7 @@ container_create(int argc, VALUE *argv, VALUE self)
     ret = container->create(container, template, NULL, NULL, flags, args);
 
     if (!NIL_P(rb_args))
-        free_char_pointer_array(args, RARRAY_LEN(rb_args));
+        free_c_string_array(args);
 
     if (!ret)
         rb_raise(Error, "unable to create container");
@@ -739,7 +736,7 @@ container_interfaces(VALUE self)
     for (i = 0; i < num_interfaces; i++)
         rb_ary_store(rb_interfaces, i, rb_str_new2(interfaces[i]));
 
-    free_char_pointer_array(interfaces, num_interfaces);
+    free_c_string_array(interfaces);
 
     return rb_interfaces;
 }
@@ -771,7 +768,7 @@ container_ips(int argc, VALUE *argv, VALUE self)
     for (i = 0; i < num_ips; i++)
         rb_ary_store(rb_ips, i, rb_str_new2(ips[i]));
 
-    free_char_pointer_array(ips, num_ips);
+    free_c_string_array(ips);
 
     return rb_ips;
 }
@@ -1077,7 +1074,7 @@ container_start(int argc, VALUE *argv, VALUE self)
     ret = data->container->start(data->container, use_init, args);
 
     if (!NIL_P(rb_args))
-        free_char_pointer_array(args, RARRAY_LEN(rb_args));
+        free_c_string_array(args);
 
     if (!ret)
         rb_raise(Error, "unable to start container");
@@ -1238,7 +1235,7 @@ lxc_list_containers(int argc, VALUE *argv, VALUE self)
     rb_containers = rb_ary_new2(num_containers);
     for (i = 0; i < num_containers; i++)
         rb_ary_store(rb_containers, i, rb_str_new2(names[i]));
-    free_char_pointer_array(names, num_containers);
+    free_c_string_array(names);
 
     return rb_containers;
 }
