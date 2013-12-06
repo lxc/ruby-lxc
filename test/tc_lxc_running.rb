@@ -1,4 +1,5 @@
 require 'test/unit'
+require 'tempfile'
 require './lxc'
 
 LXC_TEMPLATE   = 'ubuntu'
@@ -39,9 +40,22 @@ class TestLXCRunning < Test::Unit::TestCase
       sleep 1
     end
     assert(ips.length > 0)
-    @container.attach(:wait => true,
-                      :namespaces => LXC::CLONE_NEWNET | LXC::CLONE_NEWUTS) do
-      LXC.run_command(['ifconfig', 'eth0'])
+    path = "/tmp/tc_lxc_running_ifconfig_eth0.#{Process.pid}"
+    file = File.open(path, 'w+')
+    begin
+      opts = {
+        :wait       => true,
+        :stdout     => file,
+        :namespaces => LXC::CLONE_NEWNET | LXC::CLONE_NEWUTS,
+      }
+      @container.attach(opts) do
+        LXC.run_command('ifconfig eth0')
+      end
+      file.rewind
+      assert_match(/^eth0\s+Link\sencap:Ethernet\s+HWaddr\s/, file.readline)
+    ensure
+      file.close
+      File.unlink(path)
     end
   end
 end
