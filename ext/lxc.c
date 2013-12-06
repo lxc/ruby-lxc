@@ -10,6 +10,7 @@
 extern int lxc_wait_for_pid_status(pid_t pid);
 extern long lxc_config_parse_arch(const char *arch);
 
+static VALUE Container;
 static VALUE Error;
 
 struct container_data {
@@ -448,54 +449,75 @@ container_clone(int argc, VALUE *argv, VALUE self)
 {
     int flags;
     unsigned long new_size;
-    char *new_name, *config_path, *bdev_type, *bdev_data;
+    char *name, *config_path, *bdev_type, *bdev_data;
     char **hook_args;
     struct lxc_container *container, *new_container;
     struct container_data *data;
-    VALUE rb_new_name, rb_config_path, rb_bdev_type, rb_bdev_data, rb_hook_args;
-    VALUE rb_opts;
+    VALUE rb_name, rb_opts;
+    VALUE rb_flags, rb_config_path, rb_bdev_type, rb_bdev_data;
+    VALUE rb_new_size, rb_hook_args;
+    VALUE rb_args[2];
 
-    rb_scan_args(argc, argv, "01", &rb_opts);
+    rb_scan_args(argc, argv, "11", &rb_name, &rb_opts);
 
-    if (TYPE(rb_opts) != T_HASH)
-        rb_raise(rb_eArgError, "clone options must be a hash");
+    name = StringValuePtr(rb_name);
 
-    rb_new_name = rb_hash_aref(rb_opts, SYMBOL("new_name"));
-    new_name = StringValuePtr(rb_new_name);
+    config_path = NULL;
+    flags       = 0;
+    bdev_type   = NULL;
+    bdev_data   = NULL;
+    new_size    = 0;
+    hook_args   = NULL;
 
-    rb_config_path = rb_hash_aref(rb_opts, SYMBOL("config_path"));
-    config_path = StringValuePtr(rb_config_path);
+    rb_config_path = Qnil;
 
-    flags = NUM2INT(rb_hash_aref(rb_opts, SYMBOL("flags")));
+    if (!NIL_P(rb_opts)) {
+        Check_Type(rb_opts, T_HASH);
+        rb_config_path = rb_hash_aref(rb_opts, SYMBOL("config_path"));
+        if (!NIL_P(rb_config_path))
+            config_path = StringValuePtr(rb_config_path);
 
-    rb_bdev_type = rb_hash_aref(rb_opts, SYMBOL("bdev_type"));
-    bdev_type = StringValuePtr(rb_bdev_type);
+        rb_flags = rb_hash_aref(rb_opts, SYMBOL("flags"));
+        if (!NIL_P(rb_flags))
+            flags = NUM2INT(rb_flags);
 
-    rb_bdev_data = rb_hash_aref(rb_opts, SYMBOL("bdev_data"));
-    bdev_data = StringValuePtr(rb_bdev_data);
+        rb_bdev_type = rb_hash_aref(rb_opts, SYMBOL("bdev_type"));
+        if (!NIL_P(rb_bdev_type))
+            bdev_type = StringValuePtr(rb_bdev_type);
 
-    new_size = NUM2ULONG(rb_hash_aref(rb_opts, SYMBOL("new_size")));
+        rb_bdev_data = rb_hash_aref(rb_opts, SYMBOL("bdev_data"));
+        if (!NIL_P(rb_bdev_data))
+            bdev_data = StringValuePtr(rb_bdev_data);
 
-    rb_hook_args = rb_hash_aref(rb_opts, SYMBOL("hook_args"));
-    hook_args = NIL_P(rb_hook_args)
-              ? NULL
-              : ruby_to_c_string_array(rb_hook_args);
+        rb_new_size = rb_hash_aref(rb_opts, SYMBOL("new_size"));
+        if (!NIL_P(rb_bdev_data))
+            new_size = NUM2INT(rb_new_size);
 
-    if (hook_args)
-        free_c_string_array(hook_args);
+        rb_hook_args = rb_hash_aref(rb_opts, SYMBOL("hook_args"));
+        if (!NIL_P(rb_hook_args))
+            hook_args = ruby_to_c_string_array(rb_hook_args);
+    }
 
     Data_Get_Struct(self, struct container_data, data);
     container = data->container;
 
-    new_container = container->clone(container, new_name, config_path,
+    new_container = container->clone(container, name, config_path,
                                      flags, bdev_type, bdev_data, new_size,
                                      hook_args);
+
+    if (hook_args)
+        free_c_string_array(hook_args);
+
     if (new_container == NULL)
         rb_raise(Error, "unable to clone container");
 
     lxc_container_put(new_container);
 
-    return self;
+    rb_args[0] = rb_name;
+    rb_args[1] = rb_config_path;
+    rb_funcall(rb_mKernel, rb_intern("p"), 1, rb_name);
+    rb_funcall(rb_mKernel, rb_intern("p"), 1, rb_config_path);
+    return rb_class_new_instance(2, rb_args, Container);
 }
 
 static VALUE
@@ -1258,7 +1280,7 @@ Init_lxc(void)
     rb_define_singleton_method(LXC, "version", lxc_version, 0);
     rb_define_singleton_method(LXC, "list_containers", lxc_list_containers, -1);
 
-    VALUE Container = rb_define_class_under(LXC, "Container", rb_cObject);
+    Container = rb_define_class_under(LXC, "Container", rb_cObject);
     rb_define_alloc_func(Container, container_alloc);
 
     rb_define_method(Container, "initialize", container_initialize, -1);
