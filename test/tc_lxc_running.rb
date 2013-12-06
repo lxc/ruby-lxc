@@ -18,7 +18,11 @@ class TestLXCRunning < Test::Unit::TestCase
   end
 
   def teardown
-    @container.stop
+    @container.shutdown(3)
+    if @container.running?
+      @container.stop
+      @container.wait('STOPPED', 3)
+    end
   end
 
   def test_container_running
