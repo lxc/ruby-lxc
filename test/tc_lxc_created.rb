@@ -1,18 +1,16 @@
-require 'test/unit'
-require './lxc'
+$:.unshift File.expand_path(File.join(File.dirname(__FILE__), 'lib'))
 
-LXC_TEMPLATE   = 'ubuntu'
-CONTAINER_NAME = 'test'
-CLONE_NAME     = 'test_clone'
+require 'test/unit'
+require 'lxc'
 
 class TestLXCCreated < Test::Unit::TestCase
   def setup
     if Process::Sys::geteuid != 0
       raise 'This test must be ran as root'
     end
-    @name = CONTAINER_NAME
+    @name = 'test'
     @container = LXC::Container.new(@name)
-    @container.create(LXC_TEMPLATE) unless @container.defined?
+    @container.create('ubuntu') unless @container.defined?
   end
 
   def test_container_defined
