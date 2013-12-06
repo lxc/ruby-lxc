@@ -515,8 +515,6 @@ container_clone(int argc, VALUE *argv, VALUE self)
 
     rb_args[0] = rb_name;
     rb_args[1] = rb_config_path;
-    rb_funcall(rb_mKernel, rb_intern("p"), 1, rb_name);
-    rb_funcall(rb_mKernel, rb_intern("p"), 1, rb_config_path);
     return rb_class_new_instance(2, rb_args, Container);
 }
 
