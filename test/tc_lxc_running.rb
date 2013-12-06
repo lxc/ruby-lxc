@@ -62,4 +62,42 @@ class TestLXCRunning < Test::Unit::TestCase
       File.unlink(path)
     end
   end
+
+  def test_container_cgroups
+    max_mem = @container.cgroup_item('memory.max_usage_in_bytes')
+    cur_lim = @container.cgroup_item('memory.limit_in_bytes')
+    assert_not_nil(@container.set_cgroup_item('memory.limit_in_bytes', max_mem))
+    assert_not_equal(cur_lim, @container.cgroup_item('memory.limit_in_bytes'))
+  end
+
+  def test_container_freeze
+    @container.freeze
+    @container.wait('FROZEN', 3)
+    assert(@container.init_pid > 1)
+    assert(@container.running?)
+    assert_equal('FROZEN', @container.state)
+
+    @container.unfreeze
+    @container.wait('RUNNING', 3)
+    assert(@container.init_pid > 1)
+    assert(@container.running?)
+    assert_equal('RUNNING', @container.state)
+  end
+
+  def test_container_clone
+    teardown
+    assert_nil(@container.init_pid)
+    assert(!@container.running?)
+    assert_equal('STOPPED', @container.state)
+
+    assert_nothing_raised do
+      begin
+        clone = @container.clone(CLONE_NAME)
+        clone.start
+        clone.stop
+      ensure
+        clone.destroy
+      end
+    end
+  end
 end
