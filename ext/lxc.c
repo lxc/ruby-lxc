@@ -244,7 +244,8 @@ is_string_array(VALUE v)
 static int
 is_io(VALUE v)
 {
-    return rb_obj_is_kind_of(v, rb_cIO) == Qtrue;
+    return rb_respond_to(v, rb_intern("sysread")) &&
+           rb_respond_to(v, rb_intern("syswrite"));
 }
 
 static void
