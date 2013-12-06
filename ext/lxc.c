@@ -8,6 +8,7 @@
 #define SYMBOL(s) ID2SYM(rb_intern(s))
 
 extern int lxc_wait_for_pid_status(pid_t pid);
+extern long lxc_config_parse_arch(const char *arch);
 
 static VALUE Error;
 
@@ -1137,6 +1138,25 @@ container_wait(int argc, VALUE *argv, VALUE self)
 }
 
 static VALUE
+lxc_arch_to_personality(VALUE self, VALUE rb_arch)
+{
+    int ret;
+    char *arch;
+
+    arch = StringValuePtr(rb_arch);
+    ret = lxc_config_parse_arch(arch);
+
+    switch (ret) {
+    case PER_LINUX32:
+        return SYMBOL("linux32");
+    case PER_LINUX:
+        return SYMBOL("linux");
+    default:
+        rb_raise(Error, "unknown personality");
+    }
+}
+
+static VALUE
 lxc_run_command(VALUE self, VALUE rb_command)
 {
     int ret;
@@ -1149,7 +1169,19 @@ lxc_run_command(VALUE self, VALUE rb_command)
 
     ret = lxc_attach_run_command(&cmd);
     if (ret == -1)
-        rb_raise(Error, "unable to run command");
+        rb_raise(Error, "unable to run command on attached container");
+    /* NOTREACHED */
+    return Qnil;
+}
+
+static VALUE
+lxc_run_shell(VALUE self)
+{
+    int ret;
+
+    ret = lxc_attach_run_shell(NULL);
+    if (ret == -1)
+        rb_raise(Error, "unable to run shell on attached container");
     /* NOTREACHED */
     return Qnil;
 }
@@ -1216,11 +1248,10 @@ Init_lxc(void)
 {
     VALUE LXC = rb_define_module("LXC");
 
-    //rb_define_singleton_method(LXC, "arch_to_personality",
-    //                           lxc_arch_to_personality, 1);
+    rb_define_singleton_method(LXC, "arch_to_personality",
+                               lxc_arch_to_personality, 1);
     rb_define_singleton_method(LXC, "run_command", lxc_run_command, 1);
-    //rb_define_singleton_method(LXC, "attach_run_shell",
-    //                           lxc_attach_run_shell, 0);
+    rb_define_singleton_method(LXC, "run_shell", lxc_run_shell, 0);
     rb_define_singleton_method(LXC, "default_config_path",
                                lxc_default_config_path, 0);
     rb_define_singleton_method(LXC, "version", lxc_version, 0);
