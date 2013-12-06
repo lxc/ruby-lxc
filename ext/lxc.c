@@ -1160,7 +1160,7 @@ lxc_run_command(VALUE self, VALUE rb_command)
     lxc_attach_command_t cmd;
     VALUE rb_program;
 
-    rb_program = rb_ary_shift(rb_command);
+    rb_program = rb_ary_entry(rb_command, 0);
     cmd.program = StringValuePtr(rb_program);
     cmd.argv = ruby_to_c_string_array(rb_command);
 
