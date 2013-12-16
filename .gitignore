@@ -3,3 +3,4 @@
 *.sw*
 tmp/
 pkg/
+Gemfile.lock
