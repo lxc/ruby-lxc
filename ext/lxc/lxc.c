@@ -1257,9 +1257,15 @@ lxc_list_containers(int argc, VALUE *argv, VALUE self)
         rb_raise(Error, "failure to list containers");
 
     rb_containers = rb_ary_new2(num_containers);
-    for (i = 0; i < num_containers; i++)
+    /*
+     * The `names` array is not NULL-terminated, so free it manually,
+     * ie, don't use free_c_string_array().
+     */
+    for (i = 0; i < num_containers; i++) {
         rb_ary_store(rb_containers, i, rb_str_new2(names[i]));
-    free_c_string_array(names);
+        free(names[i]);
+    }
+    free(names);
 
     return rb_containers;
 }
