@@ -271,9 +271,6 @@ lxc_attach_parse_options(VALUE rb_opts)
     VALUE rb_uid, rb_gid, rb_env_policy, rb_extra_env_vars, rb_extra_keep_env;
     VALUE rb_stdin, rb_stdout, rb_stderr;
 
-    if (!NIL_P(rb_opts) && TYPE(rb_opts) != T_HASH)
-        rb_raise(Error, "need options to be a hash");
-
     opts = malloc(sizeof(*opts));
     if (opts == NULL)
         rb_raise(rb_eNoMemError, "unable to allocate options");
@@ -382,18 +379,25 @@ container_attach(int argc, VALUE *argv, VALUE self)
     pid_t pid;
     lxc_attach_options_t *opts;
     struct container_data *data;
-    VALUE block, rb_opts, rb_wait;
+    VALUE block, rb_opts;
 
     if (!rb_block_given_p())
         rb_raise(Error, "no block given");
     block = rb_block_proc();
 
     rb_scan_args(argc, argv, "01", &rb_opts);
-    rb_wait = rb_hash_delete(rb_opts, SYMBOL("wait"));
+
+    wait = 0;
+    if (!NIL_P(rb_opts)) {
+        VALUE rb_wait;
+        Check_Type(rb_opts, T_HASH);
+        rb_wait = rb_hash_delete(rb_opts, SYMBOL("wait"));
+        if (rb_wait != Qnil && rb_wait != Qfalse)
+            wait = 1;
+    }
     opts = lxc_attach_parse_options(rb_opts);
     if (opts == NULL)
         rb_raise(Error, "unable to parse attach options");
-    wait = rb_wait == Qnil || rb_wait == Qfalse ? 0 : 1;
 
     Data_Get_Struct(self, struct container_data, data);
 
