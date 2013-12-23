@@ -20,8 +20,7 @@ struct container_data {
 static char **
 ruby_to_c_string_array(VALUE rb_arr)
 {
-    int i;
-    size_t len;
+    size_t i, len;
     char **arr;
 
     len = RARRAY_LEN(rb_arr);
