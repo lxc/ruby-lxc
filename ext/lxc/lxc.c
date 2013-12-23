@@ -856,6 +856,26 @@ container_remove_device_node(int argc, VALUE *argv, VALUE self)
 }
 
 static VALUE
+container_rename(VALUE self, VALUE rb_name)
+{
+    int ret;
+    char *name;
+    struct container_data *data;
+    VALUE rb_args[2];
+
+    name = StringValuePtr(rb_name);
+    Data_Get_Struct(self, struct container_data, data);
+
+    ret = data->container->rename(data->container, name);
+    if (!ret)
+        rb_raise(Error, "unable to rename container");
+
+    rb_args[0] = rb_name;
+    rb_args[1] = Qnil;
+    return rb_class_new_instance(2, rb_args, Container);
+}
+
+static VALUE
 container_save_config(int argc, VALUE *argv, VALUE self)
 {
     int ret;
@@ -1323,6 +1343,7 @@ Init_lxc(void)
     rb_define_method(Container, "reboot", container_reboot, 0);
     rb_define_method(Container, "remove_device_node",
                      container_remove_device_node, 0);
+    rb_define_method(Container, "rename", container_rename, 1);
     rb_define_method(Container, "save_config", container_save_config, -1);
     rb_define_method(Container, "set_cgroup_item",
                      container_set_cgroup_item, 2);

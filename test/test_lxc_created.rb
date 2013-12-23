@@ -35,4 +35,12 @@ class TestLXCCreated < Test::Unit::TestCase
     assert(@container.keys('lxc.network.0').include?('name'))
     assert_match(/^00:16:3e:/, @container.config_item('lxc.network.0.hwaddr'))
   end
+
+  def test_container_rename
+    new_name = "renamed_#{@name}"
+    renamed = @container.rename(new_name)
+    assert_equal(new_name, renamed.name)
+    rerenamed = renamed.rename(@name)
+    assert_equal(@name, rerenamed.name)
+  end
 end
