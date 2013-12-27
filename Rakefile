@@ -1,7 +1,7 @@
 require 'rake/extensiontask'
-require 'rake/testtask'
 
 require 'rubygems/package_task'
+require 'rspec/core/rake_task'
 
 spec = Gem::Specification.load('ruby-lxc.gemspec')
 Gem::PackageTask.new(spec) do |pkg|
@@ -11,8 +11,6 @@ Rake::ExtensionTask.new('lxc', spec) do |ext|
   ext.lib_dir = 'lib/lxc'
 end
 
-Rake::TestTask.new do |t|
-  t.libs << 'test'
-  t.test_files = FileList['test/test_*.rb']
-  t.verbose = true
+RSpec::Core::RakeTask.new(:spec) do |t|
+  t.pattern = %w{spec/**/*_spec.rb}
 end

@@ -14,6 +14,7 @@ Gem::Specification.new do |s|
   s.has_rdoc   = false
 
   s.add_development_dependency "rake-compiler"
+  s.add_development_dependency "rspec"
 
   s.description = <<-EOF
     Ruby-LXC is a Ruby binding for the liblxc library, allowing
