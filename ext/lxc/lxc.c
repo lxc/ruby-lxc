@@ -45,6 +45,183 @@ free_c_string_array(char **arr)
     free(arr);
 }
 
+/*
+ * Document-module: LXC
+ *
+ * This module provides a Ruby API allowing programmatic managing of
+ * "Linux Containers"[http://linuxcontainers.org/].
+ *
+ * The +LXC+ module contains generic methods (which are not related to
+ * a specific container instance) and methods related to +liblxc+. The
+ * container-specific methods are contained in the +LXC::Container+ class.
+ */
+
+/*
+ * call-seq:
+ *   LXC.arch_to_personality(arch)
+ *
+ * Converts an architecture string (x86, i686, x86_64 or amd64) to a
+ * "personality", either +:linux32+ or +:linux+, for the 32-bit and 64-bit
+ * architectures, respectively.
+ */
+static VALUE
+lxc_arch_to_personality(VALUE self, VALUE rb_arch)
+{
+    int ret;
+    char *arch;
+
+    arch = StringValuePtr(rb_arch);
+    ret = lxc_config_parse_arch(arch);
+
+    switch (ret) {
+    case PER_LINUX32:
+        return SYMBOL("linux32");
+    case PER_LINUX:
+        return SYMBOL("linux");
+    default:
+        rb_raise(Error, "unknown personality");
+    }
+}
+
+/*
+ * call-seq:
+ *   LXC.run_command(command)
+ *
+ * Runs the given command (given as a string or as an argv array) in
+ * an attached container. Useful in conjunction with +LXC::Container#attach+.
+ */
+static VALUE
+lxc_run_command(VALUE self, VALUE rb_command)
+{
+    int ret;
+    lxc_attach_command_t cmd;
+    VALUE rb_program;
+
+    if (TYPE(rb_command) == T_STRING)
+        rb_command = rb_str_split(rb_command, " ");
+
+    rb_program = rb_ary_entry(rb_command, 0);
+    cmd.program = StringValuePtr(rb_program);
+    cmd.argv = ruby_to_c_string_array(rb_command);
+
+    ret = lxc_attach_run_command(&cmd);
+    if (ret == -1)
+        rb_raise(Error, "unable to run command on attached container");
+    /* NOTREACHED */
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *   LXC.run_shell
+ *
+ * Runs a shell in an attached container. Useful in conjunction with
+ * +LXC::Container#attach+.
+ */
+static VALUE
+lxc_run_shell(VALUE self)
+{
+    int ret;
+
+    ret = lxc_attach_run_shell(NULL);
+    if (ret == -1)
+        rb_raise(Error, "unable to run shell on attached container");
+    /* NOTREACHED */
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *   LXC.default_config_path
+ *
+ * Returns the +liblxc+ configuration path, usually +/var/lib/lxc+.
+ */
+static VALUE
+lxc_default_config_path(VALUE self)
+{
+    return rb_str_new2(lxc_get_default_config_path());
+}
+
+/*
+ * call-seq:
+ *   LXC.version
+ *
+ * Returns the +liblxc+ version.
+ */
+static VALUE
+lxc_version(VALUE self)
+{
+    return rb_str_new2(lxc_get_version());
+}
+
+/*
+ * call-seq:
+ *   LXC.list_containers([opts])
+ *
+ * Returns an array of containers. Which containers are returned depends on
+ * the options hash: by default, all containers are returned. One may list
+ * only active or defined containers by setting either the +:active+ or
+ * +:defined+ keys to +true+. The +:config_path+ key allows an alternate
+ * configuration path to be scanned when building the list.
+ */
+static VALUE
+lxc_list_containers(int argc, VALUE *argv, VALUE self)
+{
+    int i, num_containers;
+    int active, defined;
+    char *config;
+    char **names;
+    VALUE rb_active, rb_defined, rb_config;
+    VALUE rb_opts;
+    VALUE rb_containers;
+
+    rb_scan_args(argc, argv, "01", &rb_opts);
+
+    if (NIL_P(rb_opts)) {
+        active = 1;
+        defined = 1;
+        config = NULL;
+    } else {
+        Check_Type(rb_opts, T_HASH);
+        rb_active = rb_hash_aref(rb_opts, SYMBOL("active"));
+        active = (rb_active != Qnil) && (rb_active != Qfalse);
+        rb_defined = rb_hash_aref(rb_opts, SYMBOL("defined"));
+        defined = (rb_defined != Qnil) && (rb_defined != Qfalse);
+        rb_config = rb_hash_aref(rb_opts, SYMBOL("config_path"));
+        config = NIL_P(rb_config) ? NULL : StringValuePtr(rb_config);
+    }
+
+    num_containers = 0;
+    if (active && defined)
+        num_containers = list_all_containers(config, &names, NULL);
+    else if (active)
+        num_containers = list_active_containers(config, &names, NULL);
+    else if (defined)
+        num_containers = list_defined_containers(config, &names, NULL);
+    if (num_containers < 0)
+        rb_raise(Error, "failure to list containers");
+
+    rb_containers = rb_ary_new2(num_containers);
+    /*
+     * The `names` array is not NULL-terminated, so free it manually,
+     * ie, don't use free_c_string_array().
+     */
+    for (i = 0; i < num_containers; i++) {
+        rb_ary_store(rb_containers, i, rb_str_new2(names[i]));
+        free(names[i]);
+    }
+    free(names);
+
+    return rb_containers;
+}
+
+
+/*
+ * Document-class: LXC::Container
+ *
+ * This class contains methods to manage Linux containers.
+ */
+
 static void
 container_free(void *data)
 {
@@ -61,6 +238,13 @@ container_alloc(VALUE klass)
                             container_free, data);
 }
 
+/*
+ * call-seq:
+ *   LXC::Container.new(name, config_path = LXC.default_config_path)
+ *
+ * Creates a new container instance with the given name, under the given
+ * configuration path.
+ */
 static VALUE
 container_initialize(int argc, VALUE *argv, VALUE self)
 {
@@ -84,6 +268,12 @@ container_initialize(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.config_file_name
+ *
+ * Returns the name of the container's configuration file.
+ */
 static VALUE
 container_config_file_name(VALUE self)
 {
@@ -120,6 +310,13 @@ container_defined_p(VALUE self)
     return defined ? Qtrue : Qfalse;
 }
 
+/*
+ * call-seq:
+ *   container.init_pid
+ *
+ * Returns the PID of the container's +init+ process from the host's
+ * point of view.
+ */
 static VALUE
 container_init_pid(VALUE self)
 {
@@ -133,6 +330,12 @@ container_init_pid(VALUE self)
     return INT2NUM(pid);
 }
 
+/*
+ * call-seq:
+ *   container.name
+ *
+ * Returns the name of the container.
+ */
 static VALUE
 container_name(VALUE self)
 {
@@ -155,6 +358,12 @@ container_running_p(VALUE self)
     return running ? Qtrue : Qfalse;
 }
 
+/*
+ * call-seq:
+ *   container.state
+ *
+ * Returns the state of the container.
+ */
 static VALUE
 container_state(VALUE self)
 {
@@ -167,6 +376,12 @@ container_state(VALUE self)
     return rb_str_new2(state);
 }
 
+/*
+ * call-seq:
+ *   container.add_device_node(src_path, dst_path = src_path)
+ *
+ * Adds a device node to the container.
+ */
 static VALUE
 container_add_device_node(int argc, VALUE *argv, VALUE self)
 {
@@ -371,6 +586,26 @@ err:
     return NULL;
 }
 
+/*
+ * call-seq:
+ *   container.attach(opts = {}, &block)
+ *
+ * Calls +block+ in the context of the attached container. The options may
+ * contain the following keys.
+ *
+ * * +:flags+
+ * * +:namespaces+
+ * * +:personality+
+ * * +:initial_cwd+
+ * * +:uid+
+ * * +:gid+
+ * * +:env_policy+
+ * * +:extra_env_vars+
+ * * +:extra_keep_env+
+ * * +:stdin+
+ * * +:stdout+
+ * * +:stderr+
+ */
 static VALUE
 container_attach(int argc, VALUE *argv, VALUE self)
 {
@@ -420,6 +655,12 @@ out:
     return LONG2NUM(ret);
 }
 
+/*
+ * call-seq:
+ *   container.clear_config
+ *
+ * Clears the container configuration.
+ */
 static VALUE
 container_clear_config(VALUE self)
 {
@@ -429,6 +670,12 @@ container_clear_config(VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.clear_config_item(key)
+ *
+ * Clears the container configuration item +key+.
+ */
 static VALUE
 container_clear_config_item(VALUE self, VALUE rb_key)
 {
@@ -447,6 +694,20 @@ container_clear_config_item(VALUE self, VALUE rb_key)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.clone(clone_name, opts = {})
+ *
+ * Clones the container, returning a new one with the given name. The
+ * options hash may contain the following keys:
+ *
+ * * +:config_path+
+ * * +:flags+
+ * * +:bdev_type+
+ * * +:bdev_data+
+ * * +:new_size+
+ * * +:hook_args+
+ */
 static VALUE
 container_clone(int argc, VALUE *argv, VALUE self)
 {
@@ -521,6 +782,19 @@ container_clone(int argc, VALUE *argv, VALUE self)
     return rb_class_new_instance(2, rb_args, Container);
 }
 
+/*
+ * call-seq:
+ *   container.console(opts = {})
+ *
+ * Accesses the container's console. The options hash may contain the
+ * following keys.
+ *
+ * * +:tty_num+
+ * * +:stdin_fd+
+ * * +:stdout_fd+
+ * * +:stderr_fd+
+ * * +:escape+
+ */
 static VALUE
 container_console(int argc, VALUE *argv, VALUE self)
 {
@@ -554,6 +828,12 @@ container_console(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.console_fd(tty_num = nil)
+ *
+ * Returns an IO object referring to the container's console file descriptor.
+ */
 static VALUE
 container_console_fd(int argc, VALUE *argv, VALUE self)
 {
@@ -575,6 +855,16 @@ container_console_fd(int argc, VALUE *argv, VALUE self)
     return rb_class_new_instance(1, rb_io_args, rb_cIO);
 }
 
+/*
+ * call-seq:
+ *   container.create(template, flags = 0, args = [])
+ *
+ * Creates a structure for the container according to the given template.
+ * This usually consists of downloading and installing a Linux distribution
+ * inside the container's rootfs.
+ *
+ * The +flags+ argument is an OR of +LXC_CREATE_*+ flags.
+ */
 static VALUE
 container_create(int argc, VALUE *argv, VALUE self)
 {
@@ -605,6 +895,12 @@ container_create(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.destroy
+ *
+ * Destroys the container.
+ */
 static VALUE
 container_destroy(VALUE self)
 {
@@ -619,6 +915,12 @@ container_destroy(VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.freeze
+ *
+ * Freezes the container.
+ */
 static VALUE
 container_freeze(VALUE self)
 {
@@ -634,6 +936,12 @@ container_freeze(VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.cgroup_item(key)
+ *
+ * Returns the value corresponding to the given cgroup item configuration.
+ */
 static VALUE
 container_cgroup_item(VALUE self, VALUE rb_key)
 {
@@ -666,6 +974,12 @@ container_cgroup_item(VALUE self, VALUE rb_key)
     return ret;
 }
 
+/*
+ * call-seq:
+ *   container.config_item(key)
+ *
+ * Returns the value corresponding to the given configuration item.
+ */
 static VALUE
 container_config_item(VALUE self, VALUE rb_key)
 {
@@ -699,6 +1013,12 @@ container_config_item(VALUE self, VALUE rb_key)
     return value[len2-1] == '\n' ?  rb_str_split(rb_config, "\n") : rb_config;
 }
 
+/*
+ * call-seq:
+ *   container.config_path
+ *
+ * Returns the configuration path for the container.
+ */
 static VALUE
 container_config_path(VALUE self)
 {
@@ -707,6 +1027,12 @@ container_config_path(VALUE self)
     return rb_str_new2(data->container->get_config_path(data->container));
 }
 
+/*
+ * call-seq:
+ *   container.keys(key)
+ *
+ * Returns a list of valid sub-keys for the given configuration key.
+ */
 static VALUE
 container_keys(VALUE self, VALUE rb_key)
 {
@@ -739,6 +1065,12 @@ container_keys(VALUE self, VALUE rb_key)
     return value[len2-1] == '\n' ?  rb_str_split(rb_keys, "\n") : rb_keys;
 }
 
+/*
+ * call-seq:
+ *   container.interfaces
+ *
+ * Returns the list of network interfaces of the container.
+ */
 static VALUE
 container_interfaces(VALUE self)
 {
@@ -765,6 +1097,12 @@ container_interfaces(VALUE self)
     return rb_interfaces;
 }
 
+/*
+ * call-seq:
+ *   container.ip_addresses
+ *
+ * Returns the list of IP addresses of the container.
+ */
 static VALUE
 container_ips(int argc, VALUE *argv, VALUE self)
 {
@@ -797,6 +1135,12 @@ container_ips(int argc, VALUE *argv, VALUE self)
     return rb_ips;
 }
 
+/*
+ * call-seq:
+ *   container.load_config(config_path = nil)
+ *
+ * Loads the container's configuration.
+ */
 static VALUE
 container_load_config(int argc, VALUE *argv, VALUE self)
 {
@@ -817,6 +1161,12 @@ container_load_config(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.reboot
+ *
+ * Reboots the container.
+ */
 static VALUE
 container_reboot(VALUE self)
 {
@@ -832,6 +1182,12 @@ container_reboot(VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.remove_device_node(src_path, dst_path = src_path)
+ *
+ * Removes a device node from the container.
+ */
 static VALUE
 container_remove_device_node(int argc, VALUE *argv, VALUE self)
 {
@@ -855,6 +1211,13 @@ container_remove_device_node(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.rename(new_name)
+ *
+ * Renames the container and returns a new +LXC::Container+ instance of
+ * the container with the new name.
+ */
 static VALUE
 container_rename(VALUE self, VALUE rb_name)
 {
@@ -895,6 +1258,12 @@ container_save_config(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.set_cgroup_item(key, value)
+ *
+ * Sets the value of a cgroup configuration item.
+ */
 static VALUE
 container_set_cgroup_item(VALUE self, VALUE rb_key, VALUE rb_value)
 {
@@ -914,6 +1283,12 @@ container_set_cgroup_item(VALUE self, VALUE rb_key, VALUE rb_value)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.set_config_item(key, value)
+ *
+ * Sets the value of a configuration item.
+ */
 static VALUE
 container_set_config_item(VALUE self, VALUE rb_key, VALUE rb_value)
 {
@@ -953,6 +1328,12 @@ container_set_config_item(VALUE self, VALUE rb_key, VALUE rb_value)
     }
 }
 
+/*
+ * call-seq:
+ *   container.config_path = path
+ *
+ * Sets the container configuration path.
+ */
 static VALUE
 container_set_config_path(VALUE self, VALUE rb_path)
 {
@@ -970,6 +1351,14 @@ container_set_config_path(VALUE self, VALUE rb_path)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.shutdown(timeout = -1)
+ *
+ * Shuts down the container, optionally waiting for +timeout+ seconds. If
+ * +timeout+ is +-1+, wait as long as necessary for the container to
+ * shutdown.
+ */
 static VALUE
 container_shutdown(int argc, VALUE *argv, VALUE self)
 {
@@ -989,6 +1378,12 @@ container_shutdown(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.snapshot(path = nil)
+ *
+ * Creates a snapshot of the container. Returns the snapshot name.
+ */
 static VALUE
 container_snapshot(int argc, VALUE *argv, VALUE self)
 {
@@ -1014,6 +1409,12 @@ container_snapshot(int argc, VALUE *argv, VALUE self)
     return rb_str_new2(new_name);
 }
 
+/*
+ * call-seq:
+ *   container.snapshot_destroy(name)
+ *
+ * Destroys the given snapshot.
+ */
 static VALUE
 container_snapshot_destroy(VALUE self, VALUE rb_name)
 {
@@ -1032,6 +1433,12 @@ container_snapshot_destroy(VALUE self, VALUE rb_name)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.snapshot_list
+ *
+ * Returns a list of existing snapshots for the container.
+ */
 static VALUE
 container_snapshot_list(VALUE self)
 {
@@ -1060,6 +1467,12 @@ container_snapshot_list(VALUE self)
     return rb_snapshots;
 }
 
+/*
+ * call-seq:
+ *   container.snapshot_restore(name, new_name = nil)
+ *
+ * Restores the given snapshot.
+ */
 static VALUE
 container_snapshot_restore(int argc, VALUE *argv, VALUE self)
 {
@@ -1081,6 +1494,17 @@ container_snapshot_restore(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.start(opts = {})
+ *
+ * Starts the container. The options hash may contain the following keys.
+ *
+ * * +:use_init+
+ * * +:daemonize+
+ * * +:close_fds+
+ * * +:args+
+ */
 static VALUE
 container_start(int argc, VALUE *argv, VALUE self)
 {
@@ -1126,6 +1550,12 @@ container_start(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.stop
+ *
+ * Stops the container.
+ */
 static VALUE
 container_stop(VALUE self)
 {
@@ -1141,6 +1571,12 @@ container_stop(VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.unfreeze
+ *
+ * Thaws a frozen container.
+ */
 static VALUE
 container_unfreeze(VALUE self)
 {
@@ -1156,6 +1592,13 @@ container_unfreeze(VALUE self)
     return self;
 }
 
+/*
+ * call-seq:
+ *   container.wait(state, timeout = -1)
+ *
+ * Waits for +timeout+ seconds (or as long as necessary if +timeout+ is +-1+)
+ * until the container's state becomes +state+.
+ */
 static VALUE
 container_wait(int argc, VALUE *argv, VALUE self)
 {
@@ -1176,121 +1619,6 @@ container_wait(int argc, VALUE *argv, VALUE self)
         rb_raise(Error, "error waiting for container");
 
     return self;
-}
-
-static VALUE
-lxc_arch_to_personality(VALUE self, VALUE rb_arch)
-{
-    int ret;
-    char *arch;
-
-    arch = StringValuePtr(rb_arch);
-    ret = lxc_config_parse_arch(arch);
-
-    switch (ret) {
-    case PER_LINUX32:
-        return SYMBOL("linux32");
-    case PER_LINUX:
-        return SYMBOL("linux");
-    default:
-        rb_raise(Error, "unknown personality");
-    }
-}
-
-static VALUE
-lxc_run_command(VALUE self, VALUE rb_command)
-{
-    int ret;
-    lxc_attach_command_t cmd;
-    VALUE rb_program;
-
-    if (TYPE(rb_command) == T_STRING)
-        rb_command = rb_str_split(rb_command, " ");
-
-    rb_program = rb_ary_entry(rb_command, 0);
-    cmd.program = StringValuePtr(rb_program);
-    cmd.argv = ruby_to_c_string_array(rb_command);
-
-    ret = lxc_attach_run_command(&cmd);
-    if (ret == -1)
-        rb_raise(Error, "unable to run command on attached container");
-    /* NOTREACHED */
-    return Qnil;
-}
-
-static VALUE
-lxc_run_shell(VALUE self)
-{
-    int ret;
-
-    ret = lxc_attach_run_shell(NULL);
-    if (ret == -1)
-        rb_raise(Error, "unable to run shell on attached container");
-    /* NOTREACHED */
-    return Qnil;
-}
-
-static VALUE
-lxc_default_config_path(VALUE self)
-{
-    return rb_str_new2(lxc_get_default_config_path());
-}
-
-static VALUE
-lxc_version(VALUE self)
-{
-    return rb_str_new2(lxc_get_version());
-}
-
-static VALUE
-lxc_list_containers(int argc, VALUE *argv, VALUE self)
-{
-    int i, num_containers;
-    int active, defined;
-    char *config;
-    char **names;
-    VALUE rb_active, rb_defined, rb_config;
-    VALUE rb_opts;
-    VALUE rb_containers;
-
-    rb_scan_args(argc, argv, "01", &rb_opts);
-
-    if (NIL_P(rb_opts)) {
-        active = 1;
-        defined = 1;
-        config = NULL;
-    } else {
-        Check_Type(rb_opts, T_HASH);
-        rb_active = rb_hash_aref(rb_opts, SYMBOL("active"));
-        active = (rb_active != Qnil) && (rb_active != Qfalse);
-        rb_defined = rb_hash_aref(rb_opts, SYMBOL("defined"));
-        defined = (rb_defined != Qnil) && (rb_defined != Qfalse);
-        rb_config = rb_hash_aref(rb_opts, SYMBOL("config_path"));
-        config = NIL_P(rb_config) ? NULL : StringValuePtr(rb_config);
-    }
-
-    num_containers = 0;
-    if (active && defined)
-        num_containers = list_all_containers(config, &names, NULL);
-    else if (active)
-        num_containers = list_active_containers(config, &names, NULL);
-    else if (defined)
-        num_containers = list_defined_containers(config, &names, NULL);
-    if (num_containers < 0)
-        rb_raise(Error, "failure to list containers");
-
-    rb_containers = rb_ary_new2(num_containers);
-    /*
-     * The `names` array is not NULL-terminated, so free it manually,
-     * ie, don't use free_c_string_array().
-     */
-    for (i = 0; i < num_containers; i++) {
-        rb_ary_store(rb_containers, i, rb_str_new2(names[i]));
-        free(names[i]);
-    }
-    free(names);
-
-    return rb_containers;
 }
 
 void
