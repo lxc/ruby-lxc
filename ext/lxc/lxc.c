@@ -857,7 +857,7 @@ container_console_fd(int argc, VALUE *argv, VALUE self)
 
 /*
  * call-seq:
- *   container.create(template, flags = 0, args = [])
+ *   container.create(template, bdevtype = nil, flags = 0, args = [])
  *
  * Creates a structure for the container according to the given template.
  * This usually consists of downloading and installing a Linux distribution
@@ -870,21 +870,23 @@ container_create(int argc, VALUE *argv, VALUE self)
 {
     int ret, flags;
     char *template;
+    char *bdevtype;
     char **args = { NULL };
     struct container_data *data;
     struct lxc_container *container;
-    VALUE rb_template, rb_flags, rb_args;
+    VALUE rb_template, rb_bdevtype, rb_flags, rb_args;
 
-    rb_scan_args(argc, argv, "12", &rb_template, &rb_flags, &rb_args);
+    rb_scan_args(argc, argv, "13", &rb_template, &rb_bdevtype, &rb_flags, &rb_args);
 
     template = StringValuePtr(rb_template);
+    bdevtype = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
     flags = NIL_P(rb_flags) ? 0 : NUM2INT(rb_flags);
     if (!NIL_P(rb_args))
         args = ruby_to_c_string_array(rb_args);
 
     Data_Get_Struct(self, struct container_data, data);
     container = data->container;
-    ret = container->create(container, template, NULL, NULL, flags, args);
+    ret = container->create(container, template, bdevtype, NULL, flags, args);
 
     if (!NIL_P(rb_args))
         free_c_string_array(args);
