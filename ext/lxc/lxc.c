@@ -3,6 +3,7 @@
 #include <linux/sched.h>       /* for CLONE_* constants */
 #include <lxc/lxccontainer.h>
 #include <lxc/attach_options.h>
+#include <stdint.h>
 #include <string.h>
 
 #define SYMBOL(s) ID2SYM(rb_intern(s))
@@ -712,7 +713,7 @@ static VALUE
 container_clone(int argc, VALUE *argv, VALUE self)
 {
     int flags;
-    unsigned long new_size;
+    uint64_t new_size;
     char *name, *config_path, *bdev_type, *bdev_data;
     char **hook_args;
     struct lxc_container *container, *new_container;
@@ -755,7 +756,7 @@ container_clone(int argc, VALUE *argv, VALUE self)
 
         rb_new_size = rb_hash_aref(rb_opts, SYMBOL("new_size"));
         if (!NIL_P(rb_bdev_data))
-            new_size = NUM2INT(rb_new_size);
+            new_size = NUM2ULL(rb_new_size);
 
         rb_hook_args = rb_hash_aref(rb_opts, SYMBOL("hook_args"));
         if (!NIL_P(rb_hook_args))
