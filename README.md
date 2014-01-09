@@ -28,7 +28,7 @@ gem install pkg/ruby-lxc-0.1.0.gem
 ```
 or just add this to your ```Gemfile```
 ```ruby
-gem "ruby-lxc", github: "andrenth/ruby-lxc"
+gem "ruby-lxc", github: "lxc/ruby-lxc"
 ```
 
 ## Usage
