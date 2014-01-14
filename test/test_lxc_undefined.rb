@@ -28,6 +28,6 @@ class TestLXCUndefined < Test::Unit::TestCase
   end
 
   def test_container_stopped
-    assert_equal('STOPPED', @container.state)
+    assert_equal(:stopped, @container.state)
   end
 end

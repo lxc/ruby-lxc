@@ -19,15 +19,15 @@ class TestLXCRunning < Test::Unit::TestCase
     @container.shutdown(3)
     if @container.running?
       @container.stop
-      @container.wait('STOPPED', 3)
+      @container.wait(:stopped, 3)
     end
   end
 
   def test_container_running
-    @container.wait('RUNNING', 3)
+    @container.wait(:running, 3)
     assert(@container.init_pid > 1)
     assert(@container.running?)
-    assert_equal('RUNNING', @container.state)
+    assert_equal(:running, @container.state)
   end
 
   def test_container_interfaces
@@ -72,23 +72,23 @@ class TestLXCRunning < Test::Unit::TestCase
 
   def test_container_freeze
     @container.freeze
-    @container.wait('FROZEN', 3)
+    @container.wait(:frozen, 3)
     assert(@container.init_pid > 1)
     assert(@container.running?)
-    assert_equal('FROZEN', @container.state)
+    assert_equal(:frozen, @container.state)
 
     @container.unfreeze
-    @container.wait('RUNNING', 3)
+    @container.wait(:running, 3)
     assert(@container.init_pid > 1)
     assert(@container.running?)
-    assert_equal('RUNNING', @container.state)
+    assert_equal(:running, @container.state)
   end
 
   def test_container_clone
     teardown
     assert_nil(@container.init_pid)
     assert(!@container.running?)
-    assert_equal('STOPPED', @container.state)
+    assert_equal(:stopped, @container.state)
 
     assert_nothing_raised do
       begin

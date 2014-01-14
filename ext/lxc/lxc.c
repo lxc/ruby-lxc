@@ -369,18 +369,18 @@ container_running_p(VALUE self)
  * call-seq:
  *   container.state
  *
- * Returns the state of the container.
+ * Returns a symbol representing the state of the container.
  */
 static VALUE
 container_state(VALUE self)
 {
-    const char *state;
     struct container_data *data;
+    VALUE rb_state;
 
     Data_Get_Struct(self, struct container_data, data);
-    state = data->container->state(data->container);
+    rb_state = rb_str_new2(data->container->state(data->container));
 
-    return rb_str_new2(state);
+    return rb_str_intern(rb_funcall(rb_state, rb_intern("downcase"), 0));
 }
 
 /*
@@ -1614,11 +1614,14 @@ container_wait(int argc, VALUE *argv, VALUE self)
     int ret, timeout;
     char *state;
     struct container_data *data;
-    VALUE rb_state, rb_timeout;
+    VALUE rb_state_str, rb_state, rb_timeout;
 
     rb_scan_args(argc, argv, "11", &rb_state, &rb_timeout);
 
-    state = StringValuePtr(rb_state);
+    rb_state_str = rb_funcall(rb_state, rb_intern("to_s"), 0);
+    rb_state_str = rb_funcall(rb_state_str, rb_intern("upcase"), 0);
+    state = StringValuePtr(rb_state_str);
+
     timeout = NIL_P(rb_timeout) ? -1 : NUM2INT(rb_timeout);
 
     Data_Get_Struct(self, struct container_data, data);
