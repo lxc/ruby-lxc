@@ -64,7 +64,9 @@ class TestLXCRunning < Test::Unit::TestCase
   def test_container_cgroups
     max_mem = @container.cgroup_item('memory.max_usage_in_bytes')
     cur_lim = @container.cgroup_item('memory.limit_in_bytes')
-    assert_not_nil(@container.set_cgroup_item('memory.limit_in_bytes', max_mem))
+    assert_nothing_raised(LXC::Error) do
+      @container.set_cgroup_item('memory.limit_in_bytes', max_mem)
+    end
     assert_not_equal(cur_lim, @container.cgroup_item('memory.limit_in_bytes'))
   end
 
