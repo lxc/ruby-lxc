@@ -133,14 +133,20 @@ lxc_run_shell(VALUE self)
 
 /*
  * call-seq:
- *   LXC.default_config_path
+ *   LXC.global_config_item(key)
  *
- * Returns the +liblxc+ configuration path, usually +/var/lib/lxc+.
+ * Returns value for the given global config key.
  */
 static VALUE
-lxc_default_config_path(VALUE self)
+lxc_global_config_item(VALUE self, VALUE rb_key)
 {
-    return rb_str_new2(lxc_get_default_config_path());
+    char *key;
+    const char *value;
+    key = StringValuePtr(rb_key);
+    value = lxc_get_global_config_item(key);
+    if (value == NULL)
+        rb_raise(Error, "invalid configuration key %s", key);
+    return rb_str_new2(value);
 }
 
 /*
@@ -241,7 +247,7 @@ container_alloc(VALUE klass)
 
 /*
  * call-seq:
- *   LXC::Container.new(name, config_path = LXC.default_config_path)
+ *   LXC::Container.new(name, config_path = LXC.global_config_item('lxc.lxcpath'))
  *
  * Creates a new container instance with the given name, under the given
  * configuration path.
@@ -1633,8 +1639,8 @@ Init_lxc(void)
                                lxc_arch_to_personality, 1);
     rb_define_singleton_method(LXC, "run_command", lxc_run_command, 1);
     rb_define_singleton_method(LXC, "run_shell", lxc_run_shell, 0);
-    rb_define_singleton_method(LXC, "default_config_path",
-                               lxc_default_config_path, 0);
+    rb_define_singleton_method(LXC, "global_config_item",
+                               lxc_global_config_item, 1);
     rb_define_singleton_method(LXC, "version", lxc_version, 0);
     rb_define_singleton_method(LXC, "list_containers", lxc_list_containers, -1);
 

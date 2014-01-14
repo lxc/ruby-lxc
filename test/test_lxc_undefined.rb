@@ -10,7 +10,8 @@ class TestLXCUndefined < Test::Unit::TestCase
   end
 
   def test_container_config_file_name
-    config_path = File.join(LXC.default_config_path, @name, 'config')
+    lxc_path = LXC.global_config_item('lxc.lxcpath')
+    config_path = File.join(lxc_path, @name, 'config')
     assert_equal(config_path, @container.config_file_name)
   end
 
