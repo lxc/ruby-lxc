@@ -15,7 +15,7 @@ class TestLXCClassMethods < Test::Unit::TestCase
   end
 
   def test_list_containers
-    assert_equal([@name], LXC.list_containers)
+    assert(LXC.list_containers.include?('test'))
   end
 
   def test_arch_to_personality

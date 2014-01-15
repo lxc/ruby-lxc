@@ -103,7 +103,7 @@ class TestLXCRunning < Test::Unit::TestCase
 
   def test_container_listed
     containers = LXC.list_containers
-    assert_equal(1, containers.length)
-    assert_equal(@name, containers.first)
+    assert(containers.length > 0)
+    assert(containers.include?(@name))
   end
 end
