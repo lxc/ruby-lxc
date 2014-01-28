@@ -1247,6 +1247,35 @@ container_rename(VALUE self, VALUE rb_name)
     return rb_class_new_instance(2, rb_args, Container);
 }
 
+/*
+ * call-seq:
+ *   container.running_config_item(key)
+ *
+ * Returns the value corresponding to the given configuration item from a
+ * running container.
+ */
+static VALUE
+container_running_config_item(VALUE self, VALUE rb_key)
+{
+    char *key, *value;
+    struct container_data *data;
+    struct lxc_container *container;
+    VALUE rb_value;
+
+    Data_Get_Struct(self, struct container_data, data);
+    container = data->container;
+
+    key = StringValuePtr(rb_key);
+    value = container->get_running_config_item(container, key);
+    if (value == NULL)
+        rb_raise(Error, "unable to read running configuration item: %s", key);
+
+    rb_value = rb_str_new2(value);
+    free(value);
+
+    return rb_value;
+}
+
 static VALUE
 container_save_config(int argc, VALUE *argv, VALUE self)
 {
@@ -1684,6 +1713,8 @@ Init_lxc(void)
     rb_define_method(Container, "remove_device_node",
                      container_remove_device_node, 0);
     rb_define_method(Container, "rename", container_rename, 1);
+    rb_define_method(Container, "running_config_item",
+                     container_running_config_item, 1);
     rb_define_method(Container, "save_config", container_save_config, -1);
     rb_define_method(Container, "set_cgroup_item",
                      container_set_cgroup_item, 2);

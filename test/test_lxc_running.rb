@@ -30,6 +30,11 @@ class TestLXCRunning < Test::Unit::TestCase
     assert_equal(:running, @container.state)
   end
 
+  def test_container_config_item
+    key = 'lxc.network.0.type'
+    assert_equal('veth', @container.running_config_item(key))
+  end
+
   def test_container_interfaces
     assert_equal(['eth0', 'lo'], @container.interfaces.sort)
   end
