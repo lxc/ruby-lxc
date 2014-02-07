@@ -16,7 +16,7 @@ class TestLXCRunning < Test::Unit::TestCase
   end
 
   def teardown
-    @container.shutdown(3)
+    @container.shutdown(3) rescue nil
     if @container.running?
       @container.stop
       @container.wait(:stopped, 3)
