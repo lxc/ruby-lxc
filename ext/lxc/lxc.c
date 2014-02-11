@@ -612,6 +612,7 @@ err:
  * * +:stdin+
  * * +:stdout+
  * * +:stderr+
+ * * +:wait+
  */
 static VALUE
 container_attach(int argc, VALUE *argv, VALUE self)
