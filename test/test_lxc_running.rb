@@ -16,11 +16,15 @@ class TestLXCRunning < Test::Unit::TestCase
   end
 
   def teardown
-    @container.shutdown(3)
-    if @container.running?
-      @container.stop
-      @container.wait(:stopped, 3)
+    begin
+      @container.shutdown(3)
+    rescue LXC::Error
+      if @container.running?
+        @container.stop
+        @container.wait(:stopped, 3)
+      end
     end
+    assert(!@container.running?)
   end
 
   def test_container_running
