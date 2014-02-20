@@ -15,6 +15,7 @@ Gem::Specification.new do |s|
 
   s.add_development_dependency "rake-compiler"
 
+  s.homepage    = 'https://github.com/lxc/ruby-lxc'
   s.description = <<-EOF
     Ruby-LXC is a Ruby binding for the liblxc library, allowing
     Ruby scripts to create and manage Linux containers.
