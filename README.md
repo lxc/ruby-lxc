@@ -18,7 +18,7 @@ simply run the commands below
 ```sh
 bundle install
 bundle exec rake compile
-gem install pkg/ruby-lxc-0.1.0.gem
+gem install pkg/ruby-lxc-1.0.0.gem
 ```
 or just add this to your ```Gemfile```
 ```ruby
