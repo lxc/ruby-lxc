@@ -11,7 +11,7 @@ Gem::Specification.new do |s|
   s.files      = Dir.glob('ext/**/*.{c,rb}') +
                  Dir.glob('lib/**/*.rb')
   s.extensions = 'ext/lxc/extconf.rb'
-  s.has_rdoc   = false
+  s.has_rdoc   = true
 
   s.add_development_dependency "rake-compiler"
 
