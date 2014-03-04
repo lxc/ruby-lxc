@@ -1017,10 +1017,12 @@ container_config_item(VALUE self, VALUE rb_key)
         rb_raise(Error, "unable to read configuration file");
     }
     rb_config = rb_str_new2(value);
-    free(value);
 
     /* Return a list in case of multiple lines */
-    return value[len2-1] == '\n' ?  rb_str_split(rb_config, "\n") : rb_config;
+    rb_config = value[len2-1] == '\n' ?  rb_str_split(rb_config, "\n") : rb_config;
+    free(value);
+
+    return rb_config;
 }
 
 /*
