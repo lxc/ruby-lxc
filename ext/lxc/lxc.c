@@ -993,7 +993,7 @@ container_cgroup_item(VALUE self, VALUE rb_key)
 static VALUE
 container_config_item(VALUE self, VALUE rb_key)
 {
-    int len1, len2;
+    int len1, len2, mlines;
     char *key, *value;
     struct container_data *data;
     struct lxc_container *container;
@@ -1017,10 +1017,11 @@ container_config_item(VALUE self, VALUE rb_key)
         rb_raise(Error, "unable to read configuration file");
     }
     rb_config = rb_str_new2(value);
+    mlines = value[len2-1] == '\n';
     free(value);
 
     /* Return a list in case of multiple lines */
-    return value[len2-1] == '\n' ?  rb_str_split(rb_config, "\n") : rb_config;
+    return mlines ? rb_str_split(rb_config, "\n") : rb_config;
 }
 
 /*

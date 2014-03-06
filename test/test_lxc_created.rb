@@ -36,6 +36,10 @@ class TestLXCCreated < Test::Unit::TestCase
     assert_match(/^00:16:3e:/, @container.config_item('lxc.network.0.hwaddr'))
   end
 
+  def test_container_mount_points
+    assert_instance_of(Array, @container.config_item('lxc.mount.entry'))
+  end
+
   def test_container_rename
     new_name = "renamed_#{@name}"
     renamed = @container.rename(new_name)
