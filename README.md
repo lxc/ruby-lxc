@@ -7,18 +7,13 @@ of Linux Containers from Ruby scripts.
 
 ## Build and installation
 
-Ruby-LXC is currently under ongoing development following the code in
-[lxc's master branch](https://github.com/lxc/lxc/tree/master). Once LXC
-officially hits version 1.0.0, we will start providing and maintaing stable
-releases.
-
 Assuming a current installation of LXC is available, to install Ruby-LXC
 simply run the commands below
 
 ```sh
 bundle install
 bundle exec rake compile
-gem install pkg/ruby-lxc-1.0.0.gem
+gem install pkg/ruby-lxc-1.0.1.gem
 ```
 or just add this to your ```Gemfile```
 ```ruby
