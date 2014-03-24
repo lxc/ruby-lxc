@@ -6,11 +6,15 @@ require 'lxc'
 class TestLXCCreated < Test::Unit::TestCase
   def setup
     if Process::Sys::geteuid != 0
-      raise 'This test must be ran as root'
+      raise 'This test must be run as root'
     end
     @name = 'test'
     @container = LXC::Container.new(@name)
     @container.create('ubuntu') unless @container.defined?
+    # Make sure the renamed_test container does not exist, for the rename test
+    @new_name = "renamed_#{@name}"
+    new_container = LXC::Container.new(@new_name)
+    new_container.destroy if new_container.defined?
   end
 
   def test_container_defined
@@ -41,9 +45,8 @@ class TestLXCCreated < Test::Unit::TestCase
   end
 
   def test_container_rename
-    new_name = "renamed_#{@name}"
-    renamed = @container.rename(new_name)
-    assert_equal(new_name, renamed.name)
+    renamed = @container.rename(@new_name)
+    assert_equal(@new_name, renamed.name)
     rerenamed = renamed.rename(@name)
     assert_equal(@name, rerenamed.name)
   end
