@@ -5,6 +5,7 @@
 #include <lxc/attach_options.h>
 #include <stdint.h>
 #include <string.h>
+#include <signal.h>
 
 #define SYMBOL(s) ID2SYM(rb_intern(s))
 
@@ -383,9 +384,23 @@ container_state(VALUE self)
     return rb_str_intern(rb_funcall(rb_state, rb_intern("downcase"), 0));
 }
 
+struct add_device_node_outside_gil_args
+{
+    struct container_data *data;
+    char *src_path;
+    char *dest_path;
+};
+
+static VALUE
+add_device_node_outside_gil(void *args_void)
+{
+    struct add_device_node_outside_gil_args *args = (struct add_device_node_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->add_device_node(args->data->container, args->src_path, args->dest_path) );
+}
+
 /*
  * call-seq:
- *   container.add_device_node(src_path, dst_path = src_path)
+ *   container.add_device_node(src_path, dest_path = src_path)
  *
  * Adds a device node to the container.
  */
@@ -393,17 +408,16 @@ static VALUE
 container_add_device_node(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    char *src_path, *dst_path;
-    struct container_data *data;
-    VALUE rb_src_path, rb_dst_path;
+    VALUE rb_src_path, rb_dest_path;
+    struct add_device_node_outside_gil_args args;
 
-    rb_scan_args(argc, argv, "11", &rb_src_path, &rb_dst_path);
-    src_path = NIL_P(rb_src_path) ? NULL : StringValuePtr(rb_src_path);
-    dst_path = NIL_P(rb_dst_path) ? NULL : StringValuePtr(rb_dst_path);
+    rb_scan_args(argc, argv, "11", &rb_src_path, &rb_dest_path);
+    args.src_path = StringValuePtr(rb_src_path);
+    args.dest_path = NIL_P(rb_dest_path) ? NULL : StringValuePtr(rb_dest_path);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->add_device_node(data->container, src_path, dst_path);
+    ret = NUM2INT(rb_thread_blocking_region(add_device_node_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to add device node");
 
@@ -593,6 +607,15 @@ err:
     return NULL;
 }
 
+static VALUE lxc_wait_for_pid_status_without_gil(void* pid)
+{
+  return INT2NUM(lxc_wait_for_pid_status(*(pid_t*)pid));
+}
+static void kill_pid_without_gil(void* pid)
+{
+  kill(*(pid_t*)pid, SIGKILL);
+}
+
 /*
  * call-seq:
  *   container.attach(opts = {}, &block)
@@ -650,7 +673,13 @@ container_attach(int argc, VALUE *argv, VALUE self)
         goto out;
 
     if (wait) {
-        ret = lxc_wait_for_pid_status(pid);
+        ret = NUM2INT(
+          rb_thread_blocking_region(
+            lxc_wait_for_pid_status_without_gil,
+            &pid,
+            kill_pid_without_gil,
+            &pid
+          ));
         /* handle case where attach fails */
         if (WIFEXITED(ret) && WEXITSTATUS(ret) == 255)
             ret = -1;
@@ -702,6 +731,30 @@ container_clear_config_item(VALUE self, VALUE rb_key)
     return self;
 }
 
+struct clone_outside_gil_args
+{
+    struct container_data *data;
+    struct lxc_container *new_container;
+    char *name;
+    char *config_path;
+    int flags;
+    char *bdev_type;
+    char *bdev_data;
+    uint64_t new_size;
+    char **hook_args;
+};
+
+static VALUE
+clone_outside_gil(void *args_void)
+{
+    struct clone_outside_gil_args *args = (struct clone_outside_gil_args *)args_void;
+    struct lxc_container *container = args->data->container;
+    args->new_container = container->clone(container, args->name,
+        args->config_path, args->flags, args->bdev_type, args->bdev_data,
+        args->new_size, args->hook_args);
+    return Qnil;
+}
+
 /*
  * call-seq:
  *   container.clone(clone_name, opts = {})
@@ -719,27 +772,22 @@ container_clear_config_item(VALUE self, VALUE rb_key)
 static VALUE
 container_clone(int argc, VALUE *argv, VALUE self)
 {
-    int flags;
-    uint64_t new_size;
-    char *name, *config_path, *bdev_type, *bdev_data;
-    char **hook_args;
-    struct lxc_container *container, *new_container;
-    struct container_data *data;
     VALUE rb_name, rb_opts;
     VALUE rb_flags, rb_config_path, rb_bdev_type, rb_bdev_data;
     VALUE rb_new_size, rb_hook_args;
     VALUE rb_args[2];
+    struct clone_outside_gil_args args;
 
     rb_scan_args(argc, argv, "11", &rb_name, &rb_opts);
 
-    name = StringValuePtr(rb_name);
+    args.name = StringValuePtr(rb_name);
 
-    config_path = NULL;
-    flags       = 0;
-    bdev_type   = NULL;
-    bdev_data   = NULL;
-    new_size    = 0;
-    hook_args   = NULL;
+    args.config_path = NULL;
+    args.flags       = 0;
+    args.bdev_type   = NULL;
+    args.bdev_data   = NULL;
+    args.new_size    = 0;
+    args.hook_args   = NULL;
 
     rb_config_path = Qnil;
 
@@ -747,47 +795,63 @@ container_clone(int argc, VALUE *argv, VALUE self)
         Check_Type(rb_opts, T_HASH);
         rb_config_path = rb_hash_aref(rb_opts, SYMBOL("config_path"));
         if (!NIL_P(rb_config_path))
-            config_path = StringValuePtr(rb_config_path);
+            args.config_path = StringValuePtr(rb_config_path);
 
         rb_flags = rb_hash_aref(rb_opts, SYMBOL("flags"));
         if (!NIL_P(rb_flags))
-            flags = NUM2INT(rb_flags);
+            args.flags = NUM2INT(rb_flags);
 
         rb_bdev_type = rb_hash_aref(rb_opts, SYMBOL("bdev_type"));
         if (!NIL_P(rb_bdev_type))
-            bdev_type = StringValuePtr(rb_bdev_type);
+            args.bdev_type = StringValuePtr(rb_bdev_type);
 
         rb_bdev_data = rb_hash_aref(rb_opts, SYMBOL("bdev_data"));
         if (!NIL_P(rb_bdev_data))
-            bdev_data = StringValuePtr(rb_bdev_data);
+            args.bdev_data = StringValuePtr(rb_bdev_data);
 
         rb_new_size = rb_hash_aref(rb_opts, SYMBOL("new_size"));
         if (!NIL_P(rb_bdev_data))
-            new_size = NUM2ULL(rb_new_size);
+            args.new_size = NUM2ULL(rb_new_size);
 
         rb_hook_args = rb_hash_aref(rb_opts, SYMBOL("hook_args"));
         if (!NIL_P(rb_hook_args))
-            hook_args = ruby_to_c_string_array(rb_hook_args);
+            args.hook_args = ruby_to_c_string_array(rb_hook_args);
     }
 
-    Data_Get_Struct(self, struct container_data, data);
-    container = data->container;
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    new_container = container->clone(container, name, config_path,
-                                     flags, bdev_type, bdev_data, new_size,
-                                     hook_args);
+    rb_thread_blocking_region(clone_outside_gil, &args, NULL, NULL);
 
-    if (hook_args)
-        free_c_string_array(hook_args);
+    if (args.hook_args)
+        free_c_string_array(args.hook_args);
 
-    if (new_container == NULL)
+    if (args.new_container == NULL)
         rb_raise(Error, "unable to clone container");
 
-    lxc_container_put(new_container);
+    lxc_container_put(args.new_container);
 
     rb_args[0] = rb_name;
     rb_args[1] = rb_config_path;
     return rb_class_new_instance(2, rb_args, Container);
+}
+
+struct console_outside_gil_args
+{
+    struct container_data *data;
+    int tty_num;
+    int stdin_fd;
+    int stdout_fd;
+    int stderr_fd;
+    int escape;
+};
+
+static VALUE
+console_outside_gil(void *args_void)
+{
+    struct console_outside_gil_args *args = (struct console_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->console(args->data->container, args->tty_num,
+                                                   args->stdin_fd, args->stdout_fd,
+                                                   args->stderr_fd, args->escape) );
 }
 
 /*
@@ -807,29 +871,44 @@ static VALUE
 container_console(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    int tty_num = -1, stdin_fd = 0, stdout_fd = 1, stderr_fd = 2, escape = 1;
-    struct container_data *data;
-    struct lxc_container *container;
+    struct console_outside_gil_args args;
     VALUE rb_opts;
+    VALUE rb_opt;
+
+    args.tty_num = -1;
+    args.stdin_fd = 0;
+    args.stdout_fd = 1;
+    args.stdout_fd = 2;
+    args.escape = 1;
 
     rb_scan_args(argc, argv, "01", &rb_opts);
     switch (TYPE(rb_opts)) {
     case T_HASH:
-        tty_num   = NUM2INT(rb_hash_aref(rb_opts, SYMBOL("tty_num")));
-        stdin_fd  = NUM2INT(rb_hash_aref(rb_opts, SYMBOL("stdin_fd")));
-        stdout_fd = NUM2INT(rb_hash_aref(rb_opts, SYMBOL("stdout_fd")));
-        stderr_fd = NUM2INT(rb_hash_aref(rb_opts, SYMBOL("stderr_fd")));
-        escape    = NUM2INT(rb_hash_aref(rb_opts, SYMBOL("escape")));
+        rb_opt = rb_hash_aref(rb_opts, SYMBOL("tty_num"));
+        if (!NIL_P(rb_opt))
+          args.tty_num = NUM2INT(rb_opt);
+        rb_opt = rb_hash_aref(rb_opts, SYMBOL("stdin_fd"));
+        if (!NIL_P(rb_opt))
+          args.stdin_fd = NUM2INT(rb_opt);
+        rb_opt = rb_hash_aref(rb_opts, SYMBOL("stdout_fd"));
+        if (!NIL_P(rb_opt))
+          args.stdout_fd = NUM2INT(rb_opt);
+        rb_opt = rb_hash_aref(rb_opts, SYMBOL("stderr_fd"));
+        if (!NIL_P(rb_opt))
+          args.stderr_fd = NUM2INT(rb_opt);
+        rb_opt = rb_hash_aref(rb_opts, SYMBOL("escape"));
+        if (!NIL_P(rb_opt))
+          args.escape = NUM2INT(rb_opt);
+        break;
+    case T_NIL:
         break;
     default:
         rb_raise(rb_eArgError, "options must be a hash");
     }
 
-    Data_Get_Struct(self, struct container_data, data);
-    container = data->container;
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = container->console(container, tty_num, stdin_fd, stdout_fd, stderr_fd,
-                             escape);
+    ret = NUM2INT(rb_thread_blocking_region(console_outside_gil, &args, NULL, NULL));
     if (ret != 0)
         rb_raise(Error, "unable to access container console");
 
@@ -863,6 +942,23 @@ container_console_fd(int argc, VALUE *argv, VALUE self)
     return rb_class_new_instance(1, rb_io_args, rb_cIO);
 }
 
+/* Used to run container->create outside of GIL */
+struct container_create_outside_gil_args {
+    struct container_data *data;
+    char *template;
+    char *bdevtype;
+    int flags;
+    char **args;
+};
+
+static VALUE
+container_create_outside_gil(void *args_void)
+{
+    struct container_create_outside_gil_args *args = (struct container_create_outside_gil_args *)args_void;
+    int ret = args->data->container->create(args->data->container, args->template, args->bdevtype, NULL, args->flags, args->args);
+    return INT2NUM(ret);
+}
+
 /*
  * call-seq:
  *   container.create(template, bdevtype = nil, flags = 0, args = [])
@@ -876,33 +972,39 @@ container_console_fd(int argc, VALUE *argv, VALUE self)
 static VALUE
 container_create(int argc, VALUE *argv, VALUE self)
 {
-    int ret, flags;
-    char *template;
-    char *bdevtype;
-    char **args = { NULL };
-    struct container_data *data;
-    struct lxc_container *container;
+    int ret;
     VALUE rb_template, rb_bdevtype, rb_flags, rb_args;
+    struct container_create_outside_gil_args args;
+    char ** default_args = { NULL };
 
+    args.args = default_args;
     rb_scan_args(argc, argv, "13", &rb_template, &rb_bdevtype, &rb_flags, &rb_args);
 
-    template = StringValuePtr(rb_template);
-    bdevtype = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
-    flags = NIL_P(rb_flags) ? 0 : NUM2INT(rb_flags);
+    args.template = StringValuePtr(rb_template);
+    args.bdevtype = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
+    args.flags = NIL_P(rb_flags) ? 0 : NUM2INT(rb_flags);
     if (!NIL_P(rb_args))
-        args = ruby_to_c_string_array(rb_args);
+        args.args = ruby_to_c_string_array(rb_args);
 
-    Data_Get_Struct(self, struct container_data, data);
-    container = data->container;
-    ret = container->create(container, template, bdevtype, NULL, flags, args);
+    Data_Get_Struct(self, struct container_data, args.data);
+
+    ret = NUM2INT(rb_thread_blocking_region(container_create_outside_gil, &args, NULL, NULL));
 
     if (!NIL_P(rb_args))
-        free_c_string_array(args);
+        free_c_string_array(args.args);
 
     if (!ret)
         rb_raise(Error, "unable to create container");
 
     return self;
+}
+
+
+static VALUE
+destroy_outside_gil(void* data_void)
+{
+  struct container_data *data = (struct container_data *)data_void;
+  return INT2NUM( data->container->destroy(data->container) );
 }
 
 /*
@@ -919,10 +1021,17 @@ container_destroy(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = data->container->destroy(data->container);
+    ret = NUM2INT(rb_thread_blocking_region(destroy_outside_gil, data, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to destroy container");
     return self;
+}
+
+static VALUE
+freeze_outside_gil(void* data_void)
+{
+  struct container_data *data = (struct container_data *)data_void;
+  return INT2NUM( data->container->freeze(data->container) );
 }
 
 /*
@@ -939,7 +1048,7 @@ container_freeze(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = data->container->freeze(data->container);
+    ret = NUM2INT(rb_thread_blocking_region(freeze_outside_gil, data, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to freeze container");
 
@@ -1146,6 +1255,19 @@ container_ips(int argc, VALUE *argv, VALUE self)
     return rb_ips;
 }
 
+struct load_config_outside_gil_args
+{
+    struct container_data *data;
+    char *path;
+};
+
+static VALUE
+load_config_outside_gil(void *args_void)
+{
+    struct load_config_outside_gil_args *args = (struct load_config_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->load_config(args->data->container, args->path) );
+}
+
 /*
  * call-seq:
  *   container.load_config(config_path = nil)
@@ -1156,20 +1278,26 @@ static VALUE
 container_load_config(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    char *path;
-    struct container_data *data;
     VALUE rb_path;
+    struct load_config_outside_gil_args args;
 
     rb_scan_args(argc, argv, "01", &rb_path);
-    path = NIL_P(rb_path) ? NULL : StringValuePtr(rb_path);
+    args.path = NIL_P(rb_path) ? NULL : StringValuePtr(rb_path);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->load_config(data->container, path);
+    ret = NUM2INT(rb_thread_blocking_region(load_config_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to load configuration file");
 
     return self;
+}
+
+static VALUE
+reboot_outside_gil(void* data_void)
+{
+    struct container_data *data = (struct container_data *)data_void;
+    return INT2NUM( data->container->reboot(data->container) );
 }
 
 /*
@@ -1186,16 +1314,30 @@ container_reboot(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = data->container->reboot(data->container);
+    ret = NUM2INT(rb_thread_blocking_region(reboot_outside_gil, data, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to reboot container");
 
     return self;
 }
 
+struct remove_device_node_outside_gil_args
+{
+    struct container_data *data;
+    char *src_path;
+    char *dest_path;
+};
+
+static VALUE
+remove_device_node_outside_gil(void *args_void)
+{
+    struct remove_device_node_outside_gil_args *args = (struct remove_device_node_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->remove_device_node(args->data->container, args->src_path, args->dest_path) );
+}
+
 /*
  * call-seq:
- *   container.remove_device_node(src_path, dst_path = src_path)
+ *   container.remove_device_node(src_path, dest_path = src_path)
  *
  * Removes a device node from the container.
  */
@@ -1203,23 +1345,33 @@ static VALUE
 container_remove_device_node(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    char *src_path, *dst_path;
-    struct lxc_container *container;
-    struct container_data *data;
-    VALUE rb_src_path, rb_dst_path;
+    VALUE rb_src_path, rb_dest_path;
+    struct remove_device_node_outside_gil_args args;
 
-    rb_scan_args(argc, argv, "11", &rb_src_path, &rb_dst_path);
-    src_path = StringValuePtr(rb_src_path);
-    dst_path = NIL_P(rb_dst_path) ? NULL : StringValuePtr(rb_dst_path);
+    rb_scan_args(argc, argv, "11", &rb_src_path, &rb_dest_path);
+    args.src_path = StringValuePtr(rb_src_path);
+    args.dest_path = NIL_P(rb_dest_path) ? NULL : StringValuePtr(rb_dest_path);
 
-    Data_Get_Struct(self, struct container_data, data);
-    container = data->container;
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = container->remove_device_node(container, src_path, dst_path);
+    ret = NUM2INT(rb_thread_blocking_region(remove_device_node_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to remove device node");
 
     return self;
+}
+
+struct rename_outside_gil_args
+{
+    struct container_data *data;
+    char *name;
+};
+
+static VALUE
+rename_outside_gil(void* args_void)
+{
+    struct rename_outside_gil_args *args = (struct rename_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->rename(args->data->container, args->name) );
 }
 
 /*
@@ -1233,14 +1385,14 @@ static VALUE
 container_rename(VALUE self, VALUE rb_name)
 {
     int ret;
-    char *name;
-    struct container_data *data;
     VALUE rb_args[2];
+    struct rename_outside_gil_args args;
 
-    name = StringValuePtr(rb_name);
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->rename(data->container, name);
+    args.name = StringValuePtr(rb_name);
+
+    ret = NUM2INT(rb_thread_blocking_region(rename_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to rename container");
 
@@ -1278,20 +1430,32 @@ container_running_config_item(VALUE self, VALUE rb_key)
     return rb_value;
 }
 
+struct save_config_outside_gil_args
+{
+    struct container_data *data;
+    char *path;
+};
+
+static VALUE
+save_config_outside_gil(void *args_void)
+{
+  struct save_config_outside_gil_args *args = (struct save_config_outside_gil_args *)args_void;
+  return INT2NUM( args->data->container->save_config(args->data->container, args->path) );
+}
+
 static VALUE
 container_save_config(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    char *path;
-    struct container_data *data;
     VALUE rb_path;
+    struct save_config_outside_gil_args args;
 
     rb_scan_args(argc, argv, "01", &rb_path);
-    path = NIL_P(rb_path) ? NULL : StringValuePtr(rb_path);
+    args.path = NIL_P(rb_path) ? NULL : StringValuePtr(rb_path);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->save_config(data->container, path);
+    ret = NUM2INT(rb_thread_blocking_region(save_config_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to save configuration file");
 
@@ -1391,6 +1555,19 @@ container_set_config_path(VALUE self, VALUE rb_path)
     return self;
 }
 
+struct shutdown_outside_gil_args
+{
+    struct container_data *data;
+    int timeout;
+};
+
+static VALUE
+shutdown_outside_gil(void* args_void)
+{
+    struct shutdown_outside_gil_args *args = (struct shutdown_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->shutdown(args->data->container, args->timeout) );
+}
+
 /*
  * call-seq:
  *   container.shutdown(timeout = -1)
@@ -1402,20 +1579,34 @@ container_set_config_path(VALUE self, VALUE rb_path)
 static VALUE
 container_shutdown(int argc, VALUE *argv, VALUE self)
 {
-    int ret, timeout;
-    struct container_data *data;
+    int ret;
     VALUE rb_timeout;
+    struct shutdown_outside_gil_args args;
 
     rb_scan_args(argc, argv, "01", &rb_timeout);
-    timeout = NIL_P(rb_timeout) ? -1 : NUM2INT(rb_timeout);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->shutdown(data->container, timeout);
+    args.timeout = NIL_P(rb_timeout) ? -1 : NUM2INT(rb_timeout);
+
+    ret = NUM2INT(rb_thread_blocking_region(shutdown_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to shutdown container");
 
     return self;
+}
+
+struct snapshot_outside_gil_args
+{
+    struct container_data *data;
+    char *path;
+};
+
+static VALUE
+snapshot_outside_gil(void* args_void)
+{
+    struct snapshot_outside_gil_args *args = (struct snapshot_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->snapshot(args->data->container, args->path) );
 }
 
 /*
@@ -1428,17 +1619,16 @@ static VALUE
 container_snapshot(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    char *path;
     char new_name[20];
-    struct container_data *data;
     VALUE rb_path;
+    struct snapshot_outside_gil_args args;
 
     rb_scan_args(argc, argv, "01", &rb_path);
-    path = NIL_P(rb_path) ? NULL : StringValuePtr(rb_path);
+    args.path = NIL_P(rb_path) ? NULL : StringValuePtr(rb_path);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->snapshot(data->container, path);
+    ret = NUM2INT(rb_thread_blocking_region(snapshot_outside_gil, &args, NULL, NULL));
     if (ret < 0)
         rb_raise(Error, "unable to snapshot container");
 
@@ -1447,6 +1637,19 @@ container_snapshot(int argc, VALUE *argv, VALUE self)
         rb_raise(Error, "unable to snapshot container");
 
     return rb_str_new2(new_name);
+}
+
+struct snapshot_destroy_outside_gil_args
+{
+    struct container_data *data;
+    char *name;
+};
+
+static VALUE
+snapshot_destroy_outside_gil(void* args_void)
+{
+    struct snapshot_destroy_outside_gil_args *args = (struct snapshot_destroy_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->snapshot_destroy(args->data->container, args->name) );
 }
 
 /*
@@ -1459,18 +1662,30 @@ static VALUE
 container_snapshot_destroy(VALUE self, VALUE rb_name)
 {
     int ret;
-    char *name;
-    struct container_data *data;
+    struct snapshot_destroy_outside_gil_args args;
 
-    name = StringValuePtr(rb_name);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    Data_Get_Struct(self, struct container_data, data);
+    args.name = StringValuePtr(rb_name);
 
-    ret = data->container->snapshot_destroy(data->container, name);
+    ret = NUM2INT(rb_thread_blocking_region(snapshot_destroy_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to destroy snapshot");
 
     return self;
+}
+
+struct snapshot_list_outside_gil_args
+{
+    struct container_data *data;
+    struct lxc_snapshot *snapshots;
+};
+
+static VALUE
+snapshot_list_outside_gil(void* args_void)
+{
+    struct snapshot_list_outside_gil_args *args = (struct snapshot_list_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->snapshot_list(args->data->container, &args->snapshots) );
 }
 
 /*
@@ -1483,28 +1698,41 @@ static VALUE
 container_snapshot_list(VALUE self)
 {
     int i, num_snapshots;
-    struct lxc_snapshot *snapshots;
-    struct container_data *data;
     VALUE rb_snapshots;
+    struct snapshot_list_outside_gil_args args;
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    num_snapshots = data->container->snapshot_list(data->container, &snapshots);
+    num_snapshots = NUM2INT(rb_thread_blocking_region(snapshot_list_outside_gil, &args, NULL, NULL));
     if (num_snapshots < 0)
         rb_raise(Error, "unable to list snapshots");
 
     rb_snapshots = rb_ary_new2(num_snapshots);
     for (i = 0; i < num_snapshots; i++) {
         VALUE attrs = rb_ary_new2(4);
-        rb_ary_store(attrs, 0, rb_str_new2(snapshots[i].name));
-        rb_ary_store(attrs, 1, rb_str_new2(snapshots[i].comment_pathname));
-        rb_ary_store(attrs, 2, rb_str_new2(snapshots[i].timestamp));
-        rb_ary_store(attrs, 3, rb_str_new2(snapshots[i].lxcpath));
-        snapshots[i].free(&snapshots[i]);
+        rb_ary_store(attrs, 0, rb_str_new2(args.snapshots[i].name));
+        rb_ary_store(attrs, 1, rb_str_new2(args.snapshots[i].comment_pathname));
+        rb_ary_store(attrs, 2, rb_str_new2(args.snapshots[i].timestamp));
+        rb_ary_store(attrs, 3, rb_str_new2(args.snapshots[i].lxcpath));
+        args.snapshots[i].free(&args.snapshots[i]);
         rb_ary_store(rb_snapshots, i, attrs);
     }
 
     return rb_snapshots;
+}
+
+struct snapshot_restore_outside_gil_args
+{
+    struct container_data *data;
+    char *name;
+    char *new_name;
+};
+
+static VALUE
+snapshot_restore_outside_gil(void* args_void)
+{
+    struct snapshot_restore_outside_gil_args *args = (struct snapshot_restore_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->snapshot_restore(args->data->container, args->name, args->new_name) );
 }
 
 /*
@@ -1517,21 +1745,40 @@ static VALUE
 container_snapshot_restore(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    char *name, *new_name;
-    struct container_data *data;
+    struct snapshot_restore_outside_gil_args args;
     VALUE rb_name, rb_new_name;
 
     rb_scan_args(argc, argv, "11", &rb_name, &rb_new_name);
-    name = StringValuePtr(rb_name);
-    new_name = NIL_P(rb_new_name) ? NULL : StringValuePtr(rb_new_name);
+    args.name = StringValuePtr(rb_name);
+    args.new_name = NIL_P(rb_new_name) ? NULL : StringValuePtr(rb_new_name);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->snapshot_restore(data->container, name, new_name);
+    ret = NUM2INT(rb_thread_blocking_region(snapshot_restore_outside_gil, &args, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to restore snapshot");
 
     return self;
+}
+
+
+struct start_outside_gil_args
+{
+    struct container_data *data;
+    int use_init;
+    int daemonize;
+    int close_fds;
+    char **args;
+};
+
+static VALUE
+start_outside_gil(void* args_void)
+{
+    struct start_outside_gil_args *args = (struct start_outside_gil_args *)args_void;
+    struct lxc_container *container = args->data->container;
+    container->want_close_all_fds(container, args->close_fds);
+    container->want_daemonize(container, args->daemonize);
+    return INT2NUM( container->start(container, args->use_init, args->args) );
 }
 
 /*
@@ -1548,46 +1795,50 @@ container_snapshot_restore(int argc, VALUE *argv, VALUE self)
 static VALUE
 container_start(int argc, VALUE *argv, VALUE self)
 {
-    int ret, use_init, daemonize, close_fds;
-    char **args;
-    struct container_data *data;
+    int ret;
     VALUE rb_use_init, rb_daemonize, rb_close_fds, rb_args, rb_opts;
+    struct start_outside_gil_args args;
 
-    use_init = 0;
-    daemonize = 1;
-    close_fds = 0;
-    args = NULL;
+    args.use_init = 0;
+    args.daemonize = 1;
+    args.close_fds = 0;
+    args.args = NULL;
     rb_args = Qnil;
 
     rb_scan_args(argc, argv, "01", &rb_opts);
     if (!NIL_P(rb_opts)) {
         Check_Type(rb_opts, T_HASH);
         rb_use_init = rb_hash_aref(rb_opts, SYMBOL("use_init"));
-        use_init = (rb_use_init != Qnil) && (rb_use_init != Qfalse);
+        args.use_init = (rb_use_init != Qnil) && (rb_use_init != Qfalse);
 
         rb_daemonize = rb_hash_aref(rb_opts, SYMBOL("daemonize"));
-        daemonize = (rb_daemonize != Qnil) && (rb_daemonize != Qfalse);
+        args.daemonize = (rb_daemonize != Qnil) && (rb_daemonize != Qfalse);
 
         rb_close_fds = rb_hash_aref(rb_opts, SYMBOL("close_fds"));
-        close_fds = (rb_close_fds != Qnil) && (rb_close_fds != Qfalse);
+        args.close_fds = (rb_close_fds != Qnil) && (rb_close_fds != Qfalse);
 
         rb_args = rb_hash_aref(rb_opts, SYMBOL("args"));
-        args = NIL_P(rb_args) ? NULL : ruby_to_c_string_array(rb_args);
+        args.args = NIL_P(rb_args) ? NULL : ruby_to_c_string_array(rb_args);
     }
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    data->container->want_close_all_fds(data->container, close_fds);
-    data->container->want_daemonize(data->container, daemonize);
-    ret = data->container->start(data->container, use_init, args);
+    ret = NUM2INT(rb_thread_blocking_region(start_outside_gil, &args, NULL, NULL));
 
     if (!NIL_P(rb_args))
-        free_c_string_array(args);
+        free_c_string_array(args.args);
 
     if (!ret)
         rb_raise(Error, "unable to start container");
 
     return self;
+}
+
+static VALUE
+stop_outside_gil(void* data_void)
+{
+    struct container_data *data = (struct container_data *)data_void;
+    return INT2NUM( data->container->stop(data->container) );
 }
 
 /*
@@ -1604,11 +1855,18 @@ container_stop(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = data->container->stop(data->container);
+    ret = NUM2INT(rb_thread_blocking_region(stop_outside_gil, data, NULL, NULL));
     if (!ret)
         rb_raise(Error, "unable to stop container");
 
     return self;
+}
+
+static VALUE
+unfreeze_outside_gil(void* data_void)
+{
+  struct container_data *data = (struct container_data *)data_void;
+  return INT2NUM( data->container->unfreeze(data->container) );
 }
 
 /*
@@ -1625,11 +1883,25 @@ container_unfreeze(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = data->container->unfreeze(data->container);
+    ret = NUM2INT(rb_thread_blocking_region(unfreeze_outside_gil, data, NULL, NULL));
     if (!ret)
-        rb_raise(Error, "unable to unfreeze container");
+        rb_raise(Error, "unable to unfreeze container: #{lxc_strerror(ret)}");
 
     return self;
+}
+
+struct wait_outside_gil_args
+{
+    struct container_data *data;
+    int timeout;
+    char *state;
+};
+
+static VALUE
+wait_outside_gil(void* args_void)
+{
+    struct wait_outside_gil_args *args = (struct wait_outside_gil_args *)args_void;
+    return INT2NUM( args->data->container->wait(args->data->container, args->state, args->timeout) );
 }
 
 /*
@@ -1642,22 +1914,21 @@ container_unfreeze(VALUE self)
 static VALUE
 container_wait(int argc, VALUE *argv, VALUE self)
 {
-    int ret, timeout;
-    char *state;
-    struct container_data *data;
+    int ret;
     VALUE rb_state_str, rb_state, rb_timeout;
+    struct wait_outside_gil_args args;
 
     rb_scan_args(argc, argv, "11", &rb_state, &rb_timeout);
 
     rb_state_str = rb_funcall(rb_state, rb_intern("to_s"), 0);
     rb_state_str = rb_funcall(rb_state_str, rb_intern("upcase"), 0);
-    state = StringValuePtr(rb_state_str);
+    args.state = StringValuePtr(rb_state_str);
 
-    timeout = NIL_P(rb_timeout) ? -1 : NUM2INT(rb_timeout);
+    args.timeout = NIL_P(rb_timeout) ? -1 : NUM2INT(rb_timeout);
 
-    Data_Get_Struct(self, struct container_data, data);
+    Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = data->container->wait(data->container, state, timeout);
+    ret = NUM2INT( rb_thread_blocking_region(wait_outside_gil, &args, NULL, NULL) );
     if (!ret)
         rb_raise(Error, "error waiting for container");
 
@@ -1713,7 +1984,7 @@ Init_lxc(void)
     rb_define_method(Container, "load_config", container_load_config, -1);
     rb_define_method(Container, "reboot", container_reboot, 0);
     rb_define_method(Container, "remove_device_node",
-                     container_remove_device_node, 0);
+                     container_remove_device_node, -1);
     rb_define_method(Container, "rename", container_rename, 1);
     rb_define_method(Container, "running_config_item",
                      container_running_config_item, 1);
