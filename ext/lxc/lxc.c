@@ -162,6 +162,29 @@ lxc_version(VALUE self)
     return rb_str_new2(lxc_get_version());
 }
 
+struct list_containers_outside_gil_args
+{
+    int active;
+    int defined;
+    char *config;
+    char **names;
+};
+
+static VALUE
+list_containers_outside_gil(void *args_void)
+{
+    struct list_containers_outside_gil_args *args = (struct list_containers_outside_gil_args *)args_void;
+    int num_containers = 0;
+    args->names = NULL;
+    if (args->active && args->defined)
+        num_containers = list_all_containers(args->config, &args->names, NULL);
+    else if (args->active)
+        num_containers = list_active_containers(args->config, &args->names, NULL);
+    else if (args->defined)
+        num_containers = list_defined_containers(args->config, &args->names, NULL);
+    return INT2NUM(num_containers);
+}
+
 /*
  * call-seq:
  *   LXC.list_containers([opts])
@@ -176,36 +199,33 @@ static VALUE
 lxc_list_containers(int argc, VALUE *argv, VALUE self)
 {
     int i, num_containers;
-    int active, defined;
-    char *config;
-    char **names;
     VALUE rb_active, rb_defined, rb_config;
     VALUE rb_opts;
     VALUE rb_containers;
+    struct list_containers_outside_gil_args args;
 
     rb_scan_args(argc, argv, "01", &rb_opts);
 
-    if (NIL_P(rb_opts)) {
-        active = 1;
-        defined = 1;
-        config = NULL;
-    } else {
-        Check_Type(rb_opts, T_HASH);
-        rb_active = rb_hash_aref(rb_opts, SYMBOL("active"));
-        active = (rb_active != Qnil) && (rb_active != Qfalse);
-        rb_defined = rb_hash_aref(rb_opts, SYMBOL("defined"));
-        defined = (rb_defined != Qnil) && (rb_defined != Qfalse);
-        rb_config = rb_hash_aref(rb_opts, SYMBOL("config_path"));
-        config = NIL_P(rb_config) ? NULL : StringValuePtr(rb_config);
-    }
+    args.active = 1;
+    args.defined = 1;
+    args.config = NULL;
 
-    num_containers = 0;
-    if (active && defined)
-        num_containers = list_all_containers(config, &names, NULL);
-    else if (active)
-        num_containers = list_active_containers(config, &names, NULL);
-    else if (defined)
-        num_containers = list_defined_containers(config, &names, NULL);
+    if (!NIL_P(rb_opts)) {
+        Check_Type(rb_opts, T_HASH);
+
+        rb_active = rb_hash_aref(rb_opts, SYMBOL("active"));
+        if (!NIL_P(rb_active))
+            args.active = rb_active != Qfalse;
+
+        rb_defined = rb_hash_aref(rb_opts, SYMBOL("defined"));
+        if (!NIL_P(rb_defined))
+            args.defined = rb_defined != Qfalse;
+
+        rb_config = rb_hash_aref(rb_opts, SYMBOL("config_path"));
+        if (!NIL_P(rb_config))
+            args.config = StringValuePtr(rb_config);
+    }
+    num_containers = NUM2INT(rb_thread_blocking_region(list_containers_outside_gil, &args, NULL, NULL));
     if (num_containers < 0)
         rb_raise(Error, "failure to list containers");
 
@@ -215,10 +235,10 @@ lxc_list_containers(int argc, VALUE *argv, VALUE self)
      * ie, don't use free_c_string_array().
      */
     for (i = 0; i < num_containers; i++) {
-        rb_ary_store(rb_containers, i, rb_str_new2(names[i]));
-        free(names[i]);
+        rb_ary_store(rb_containers, i, rb_str_new2(args.names[i]));
+        free(args.names[i]);
     }
-    free(names);
+    free(args.names);
 
     return rb_containers;
 }

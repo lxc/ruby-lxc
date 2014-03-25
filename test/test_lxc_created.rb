@@ -45,6 +45,7 @@ class TestLXCCreated < Test::Unit::TestCase
   end
 
   def test_container_rename
+    @container.stop if @container.running?
     renamed = @container.rename(@new_name)
     assert_equal(@new_name, renamed.name)
     rerenamed = renamed.rename(@name)
