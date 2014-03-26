@@ -3,37 +3,46 @@
 #include <linux/sched.h>       /* for CLONE_* constants */
 #include <lxc/lxccontainer.h>
 #include <lxc/attach_options.h>
+#include <signal.h>
 #include <stdint.h>
 #include <string.h>
-#include <signal.h>
 
 #define SYMBOL(s) ID2SYM(rb_intern(s))
 
 #if defined(HAVE_RB_THREAD_CALL_WITHOUT_GVL)
-// Defined in Ruby, but not in all Ruby versions' header files
+/* Defined in Ruby, but not in all Ruby versions' header files */
 extern void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
-				                                rb_unblock_function_t *ubf, void *data2);
-#define WITHOUT_GVL_RESULT_TYPE void *
-#define WITHOUT_GVL_RESULT(__X__) (void *)(intptr_t)(__X__)
-#define WITHOUT_GVL_CALL(__FUNC__, __ARG__) (int)(intptr_t)rb_thread_call_without_gvl(__FUNC__, __ARG__, NULL, NULL)
-#define WITHOUT_GVL_CALL_NOOP(__FUNC__, __ARG__) rb_thread_call_without_gvl(__FUNC__, __ARG__, NULL, NULL)
-#define WITHOUT_GVL_CALL2(__FUNC__, __ARG__, __KILLFUNC__, __KILLARG__) (int)(intptr_t)rb_thread_call_without_gvl(__FUNC__, __ARG__, __KILLFUNC__, __KILLARG__)
+                                        rb_unblock_function_t *ubf,
+                                        void *data2);
+
+#define RETURN_WITHOUT_GVL_TYPE void *
+#define RETURN_WITHOUT_GVL(x) return (void *)(intptr_t)(x)
+#define RELEASING_GVL(func, arg) \
+    (int)(intptr_t)rb_thread_call_without_gvl(func, arg, NULL, NULL)
+#define RELEASING_GVL2(func, arg, killfunc, killarg) \
+    (int)(intptr_t)rb_thread_call_without_gvl(func, arg, killfunc, killarg)
+#define RELEASING_GVL_VOID(func, arg) \
+    rb_thread_call_without_gvl(func, arg, NULL, NULL)
 #elif defined(HAVE_RB_THREAD_BLOCKING_REGION)
-#define WITHOUT_GVL_RESULT_TYPE VALUE
-#define WITHOUT_GVL_RESULT(__X__) INT2NUM(__X__)
-#define WITHOUT_GVL_CALL(__FUNC__, __ARG__) NUM2INT(rb_thread_blocking_region(__FUNC__, __ARG__, NULL, NULL))
-#define WITHOUT_GVL_CALL_NOOP(__FUNC__, __ARG__) rb_thread_blocking_region(__FUNC__, __ARG__, NULL, NULL)
-#define WITHOUT_GVL_CALL2(__FUNC__, __ARG__, __KILLFUNC__, __KILLARG__) NUM2INT(rb_thread_blocking_region(__FUNC__, __ARG__, __KILLFUNC__, __KILLARG__))
+#define RETURN_WITHOUT_GVL_TYPE VALUE
+#define RETURN_WITHOUT_GVL(x) INT2NUM(x)
+#define RELEASING_GVL(func, arg) \
+    NUM2INT(rb_thread_blocking_region(func, arg, NULL, NULL))
+#define RELEASING_GVL2(func, arg, killfunc, killarg) \
+    NUM2INT(rb_thread_blocking_region(func, arg, killfunc, killarg))
+#define RELEASING_GVL_VOID(func, arg) \
+    rb_thread_blocking_region(func, arg, NULL, NULL)
 #else
-#define WITHOUT_GVL_RESULT_TYPE int
-#define WITHOUT_GVL_RESULT(__X__) __X__
-#define WITHOUT_GVL_CALL(__FUNC__, __ARG__) __FUNC__(__ARG__)
-#define WITHOUT_GVL_CALL_NOOP(__FUNC__, __ARG__) __FUNC__(__ARG__)
-#define WITHOUT_GVL_CALL2(__FUNC__, __ARG__, __KILLFUNC__, __KILLARG__) __FUNC__(__ARG__)
+#define RETURN_WITHOUT_GVL_TYPE int
+#define RETURN_WITHOUT_GVL(x) x
+#define RELEASING_GVL(func, arg) func(arg)
+#define RELEASING_GVL_VOID(func, arg) func(arg)
+#define RELEASING_GVL2(func, arg, killfunc, killarg) func(arg)
 #endif
 
 extern int lxc_wait_for_pid_status(pid_t pid);
 extern long lxc_config_parse_arch(const char *arch);
+extern const char *lxc_strerror(int error);
 
 static VALUE Container;
 static VALUE Error;
@@ -185,27 +194,30 @@ lxc_version(VALUE self)
     return rb_str_new2(lxc_get_version());
 }
 
-struct list_containers_without_gvl_args
-{
+struct list_containers_without_gvl_args {
     int active;
     int defined;
     char *config;
     char **names;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 list_containers_without_gvl(void *args_void)
 {
-    struct list_containers_without_gvl_args *args = (struct list_containers_without_gvl_args *)args_void;
+    struct list_containers_without_gvl_args *args =
+        (struct list_containers_without_gvl_args *)args_void;
     int num_containers = 0;
     args->names = NULL;
-    if (args->active && args->defined)
+    if (args->active && args->defined) {
         num_containers = list_all_containers(args->config, &args->names, NULL);
-    else if (args->active)
-        num_containers = list_active_containers(args->config, &args->names, NULL);
-    else if (args->defined)
-        num_containers = list_defined_containers(args->config, &args->names, NULL);
-    return WITHOUT_GVL_RESULT(num_containers);
+    } else if (args->active) {
+        num_containers =
+            list_active_containers(args->config, &args->names, NULL);
+    } else if (args->defined) {
+        num_containers =
+            list_defined_containers(args->config, &args->names, NULL);
+    }
+    RETURN_WITHOUT_GVL(num_containers);
 }
 
 /*
@@ -248,7 +260,7 @@ lxc_list_containers(int argc, VALUE *argv, VALUE self)
         if (!NIL_P(rb_config))
             args.config = StringValuePtr(rb_config);
     }
-    num_containers = WITHOUT_GVL_CALL(list_containers_without_gvl, &args);
+    num_containers = RELEASING_GVL(list_containers_without_gvl, &args);
     if (num_containers < 0)
         rb_raise(Error, "failure to list containers");
 
@@ -427,18 +439,22 @@ container_state(VALUE self)
     return rb_str_intern(rb_funcall(rb_state, rb_intern("downcase"), 0));
 }
 
-struct add_device_node_without_gvl_args
-{
+struct add_device_node_without_gvl_args {
     struct container_data *data;
     char *src_path;
     char *dest_path;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 add_device_node_without_gvl(void *args_void)
 {
-    struct add_device_node_without_gvl_args *args = (struct add_device_node_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->add_device_node(args->data->container, args->src_path, args->dest_path));
+    struct add_device_node_without_gvl_args *args =
+        (struct add_device_node_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->add_device_node(args->data->container,
+                                               args->src_path,
+                                               args->dest_path)
+    );
 }
 
 /*
@@ -460,7 +476,7 @@ container_add_device_node(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(add_device_node_without_gvl, &args);
+    ret = RELEASING_GVL(add_device_node_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to add device node");
 
@@ -650,17 +666,17 @@ err:
     return NULL;
 }
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 lxc_wait_for_pid_status_without_gvl(void *pid)
 {
-  return WITHOUT_GVL_RESULT(lxc_wait_for_pid_status(*(pid_t*)pid));
+    RETURN_WITHOUT_GVL(lxc_wait_for_pid_status(*(pid_t*)pid));
 }
 
 #if defined(HAVE_RB_THREAD_CALL_WITHOUT_GVL) || defined(HAVE_RB_THREAD_BLOCKING_REGION)
 static void
 kill_pid_without_gvl(void *pid)
 {
-  kill(*(pid_t *)pid, SIGKILL);
+    kill(*(pid_t *)pid, SIGKILL);
 }
 #endif
 
@@ -721,8 +737,8 @@ container_attach(int argc, VALUE *argv, VALUE self)
         goto out;
 
     if (wait) {
-        ret = WITHOUT_GVL_CALL2(lxc_wait_for_pid_status_without_gvl, &pid,
-                                kill_pid_without_gvl, &pid);
+        ret = RELEASING_GVL2(lxc_wait_for_pid_status_without_gvl, &pid,
+                             kill_pid_without_gvl, &pid);
         /* handle case where attach fails */
         if (WIFEXITED(ret) && WEXITSTATUS(ret) == 255)
             ret = -1;
@@ -774,8 +790,7 @@ container_clear_config_item(VALUE self, VALUE rb_key)
     return self;
 }
 
-struct clone_without_gvl_args
-{
+struct clone_without_gvl_args {
     struct container_data *data;
     struct lxc_container *new_container;
     char *name;
@@ -787,15 +802,17 @@ struct clone_without_gvl_args
     char **hook_args;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 clone_without_gvl(void *args_void)
 {
-    struct clone_without_gvl_args *args = (struct clone_without_gvl_args *)args_void;
+    struct clone_without_gvl_args *args =
+        (struct clone_without_gvl_args *)args_void;
     struct lxc_container *container = args->data->container;
-    args->new_container = container->clone(container, args->name,
-        args->config_path, args->flags, args->bdev_type, args->bdev_data,
-        args->new_size, args->hook_args);
-    return WITHOUT_GVL_RESULT(0);
+    args->new_container =
+        container->clone(container, args->name,
+                         args->config_path, args->flags, args->bdev_type,
+                         args->bdev_data, args->new_size, args->hook_args);
+    RETURN_WITHOUT_GVL(0);
 }
 
 /*
@@ -863,7 +880,7 @@ container_clone(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    WITHOUT_GVL_CALL_NOOP(clone_without_gvl, &args);
+    RELEASING_GVL_VOID(clone_without_gvl, &args);
 
     if (args.hook_args)
         free_c_string_array(args.hook_args);
@@ -878,8 +895,7 @@ container_clone(int argc, VALUE *argv, VALUE self)
     return rb_class_new_instance(2, rb_args, Container);
 }
 
-struct console_without_gvl_args
-{
+struct console_without_gvl_args {
     struct container_data *data;
     int tty_num;
     int stdin_fd;
@@ -888,14 +904,17 @@ struct console_without_gvl_args
     int escape;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 console_without_gvl(void *args_void)
 {
-    struct console_without_gvl_args *args = (struct console_without_gvl_args *)args_void;
+    struct console_without_gvl_args *args =
+        (struct console_without_gvl_args *)args_void;
     struct lxc_container *container = args->data->container;
-    return WITHOUT_GVL_RESULT(container->console(container, args->tty_num,
-                                                 args->stdin_fd, args->stdout_fd,
-                                                 args->stderr_fd, args->escape));
+    RETURN_WITHOUT_GVL(
+        container->console(container, args->tty_num,
+                           args->stdin_fd, args->stdout_fd,
+                           args->stderr_fd, args->escape)
+    );
 }
 
 /*
@@ -952,7 +971,7 @@ container_console(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(console_without_gvl, &args);
+    ret = RELEASING_GVL(console_without_gvl, &args);
     if (ret != 0)
         rb_raise(Error, "unable to access container console");
 
@@ -995,11 +1014,16 @@ struct container_create_without_gvl_args {
     char **args;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 container_create_without_gvl(void *args_void)
 {
-    struct container_create_without_gvl_args *args = (struct container_create_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->create(args->data->container, args->template, args->bdevtype, NULL, args->flags, args->args));
+    struct container_create_without_gvl_args *args =
+        (struct container_create_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->create(args->data->container, args->template,
+                                      args->bdevtype, NULL, args->flags,
+                                      args->args)
+    );
 }
 
 /*
@@ -1018,10 +1042,11 @@ container_create(int argc, VALUE *argv, VALUE self)
     int ret;
     VALUE rb_template, rb_bdevtype, rb_flags, rb_args;
     struct container_create_without_gvl_args args;
-    char ** default_args = { NULL };
+    char **default_args = { NULL };
 
     args.args = default_args;
-    rb_scan_args(argc, argv, "13", &rb_template, &rb_bdevtype, &rb_flags, &rb_args);
+    rb_scan_args(argc, argv, "13",
+                 &rb_template, &rb_bdevtype, &rb_flags, &rb_args);
 
     args.template = StringValuePtr(rb_template);
     args.bdevtype = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
@@ -1031,7 +1056,7 @@ container_create(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(container_create_without_gvl, &args);
+    ret = RELEASING_GVL(container_create_without_gvl, &args);
 
     if (!NIL_P(rb_args))
         free_c_string_array(args.args);
@@ -1043,11 +1068,11 @@ container_create(int argc, VALUE *argv, VALUE self)
 }
 
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 destroy_without_gvl(void *data_void)
 {
-  struct container_data *data = (struct container_data *)data_void;
-  return WITHOUT_GVL_RESULT(data->container->destroy(data->container));
+    struct container_data *data = (struct container_data *)data_void;
+    RETURN_WITHOUT_GVL(data->container->destroy(data->container));
 }
 
 /*
@@ -1064,17 +1089,17 @@ container_destroy(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = WITHOUT_GVL_CALL(destroy_without_gvl, data);
+    ret = RELEASING_GVL(destroy_without_gvl, data);
     if (!ret)
         rb_raise(Error, "unable to destroy container");
     return self;
 }
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 freeze_without_gvl(void *data_void)
 {
-  struct container_data *data = (struct container_data *)data_void;
-  return WITHOUT_GVL_RESULT(data->container->freeze(data->container));
+    struct container_data *data = (struct container_data *)data_void;
+    RETURN_WITHOUT_GVL(data->container->freeze(data->container));
 }
 
 /*
@@ -1091,7 +1116,7 @@ container_freeze(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = WITHOUT_GVL_CALL(freeze_without_gvl, data);
+    ret = RELEASING_GVL(freeze_without_gvl, data);
     if (!ret)
         rb_raise(Error, "unable to freeze container");
 
@@ -1298,17 +1323,19 @@ container_ips(int argc, VALUE *argv, VALUE self)
     return rb_ips;
 }
 
-struct load_config_without_gvl_args
-{
+struct load_config_without_gvl_args {
     struct container_data *data;
     char *path;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 load_config_without_gvl(void *args_void)
 {
-    struct load_config_without_gvl_args *args = (struct load_config_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->load_config(args->data->container, args->path));
+    struct load_config_without_gvl_args *args =
+        (struct load_config_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->load_config(args->data->container, args->path)
+    );
 }
 
 /*
@@ -1329,18 +1356,18 @@ container_load_config(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(load_config_without_gvl, &args);
+    ret = RELEASING_GVL(load_config_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to load configuration file");
 
     return self;
 }
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 reboot_without_gvl(void* data_void)
 {
     struct container_data *data = (struct container_data *)data_void;
-    return WITHOUT_GVL_RESULT(data->container->reboot(data->container));
+    RETURN_WITHOUT_GVL(data->container->reboot(data->container));
 }
 
 /*
@@ -1357,25 +1384,29 @@ container_reboot(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = WITHOUT_GVL_CALL(reboot_without_gvl, data);
+    ret = RELEASING_GVL(reboot_without_gvl, data);
     if (!ret)
         rb_raise(Error, "unable to reboot container");
 
     return self;
 }
 
-struct remove_device_node_without_gvl_args
-{
+struct remove_device_node_without_gvl_args {
     struct container_data *data;
     char *src_path;
     char *dest_path;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 remove_device_node_without_gvl(void *args_void)
 {
-    struct remove_device_node_without_gvl_args *args = (struct remove_device_node_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->remove_device_node(args->data->container, args->src_path, args->dest_path));
+    struct remove_device_node_without_gvl_args *args =
+        (struct remove_device_node_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->remove_device_node(args->data->container,
+                                                  args->src_path,
+                                                  args->dest_path)
+    );
 }
 
 /*
@@ -1397,24 +1428,26 @@ container_remove_device_node(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(remove_device_node_without_gvl, &args);
+    ret = RELEASING_GVL(remove_device_node_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to remove device node");
 
     return self;
 }
 
-struct rename_without_gvl_args
-{
+struct rename_without_gvl_args {
     struct container_data *data;
     char *name;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 rename_without_gvl(void *args_void)
 {
-    struct rename_without_gvl_args *args = (struct rename_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->rename(args->data->container, args->name));
+    struct rename_without_gvl_args *args =
+        (struct rename_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->rename(args->data->container, args->name)
+    );
 }
 
 /*
@@ -1435,7 +1468,7 @@ container_rename(VALUE self, VALUE rb_name)
 
     args.name = StringValuePtr(rb_name);
 
-    ret = WITHOUT_GVL_CALL(rename_without_gvl, &args);
+    ret = RELEASING_GVL(rename_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to rename container");
 
@@ -1473,17 +1506,19 @@ container_running_config_item(VALUE self, VALUE rb_key)
     return rb_value;
 }
 
-struct save_config_without_gvl_args
-{
+struct save_config_without_gvl_args {
     struct container_data *data;
     char *path;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 save_config_without_gvl(void *args_void)
 {
-  struct save_config_without_gvl_args *args = (struct save_config_without_gvl_args *)args_void;
-  return WITHOUT_GVL_RESULT(args->data->container->save_config(args->data->container, args->path));
+    struct save_config_without_gvl_args *args =
+        (struct save_config_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->save_config(args->data->container, args->path)
+    );
 }
 
 static VALUE
@@ -1498,7 +1533,7 @@ container_save_config(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(save_config_without_gvl, &args);
+    ret = RELEASING_GVL(save_config_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to save configuration file");
 
@@ -1598,17 +1633,19 @@ container_set_config_path(VALUE self, VALUE rb_path)
     return self;
 }
 
-struct shutdown_without_gvl_args
-{
+struct shutdown_without_gvl_args {
     struct container_data *data;
     int timeout;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 shutdown_without_gvl(void* args_void)
 {
-    struct shutdown_without_gvl_args *args = (struct shutdown_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->shutdown(args->data->container, args->timeout));
+    struct shutdown_without_gvl_args *args =
+        (struct shutdown_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->shutdown(args->data->container, args->timeout)
+    );
 }
 
 /*
@@ -1632,24 +1669,26 @@ container_shutdown(int argc, VALUE *argv, VALUE self)
 
     args.timeout = NIL_P(rb_timeout) ? -1 : NUM2INT(rb_timeout);
 
-    ret = WITHOUT_GVL_CALL(shutdown_without_gvl, &args);
+    ret = RELEASING_GVL(shutdown_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to shutdown container");
 
     return self;
 }
 
-struct snapshot_without_gvl_args
-{
+struct snapshot_without_gvl_args {
     struct container_data *data;
     char *path;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 snapshot_without_gvl(void* args_void)
 {
-    struct snapshot_without_gvl_args *args = (struct snapshot_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->snapshot(args->data->container, args->path));
+    struct snapshot_without_gvl_args *args =
+        (struct snapshot_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->snapshot(args->data->container, args->path)
+    );
 }
 
 /*
@@ -1671,7 +1710,7 @@ container_snapshot(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(snapshot_without_gvl, &args);
+    ret = RELEASING_GVL(snapshot_without_gvl, &args);
     if (ret < 0)
         rb_raise(Error, "unable to snapshot container");
 
@@ -1682,17 +1721,20 @@ container_snapshot(int argc, VALUE *argv, VALUE self)
     return rb_str_new2(new_name);
 }
 
-struct snapshot_destroy_without_gvl_args
-{
+struct snapshot_destroy_without_gvl_args {
     struct container_data *data;
     char *name;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 snapshot_destroy_without_gvl(void *args_void)
 {
-    struct snapshot_destroy_without_gvl_args *args = (struct snapshot_destroy_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->snapshot_destroy(args->data->container, args->name));
+    struct snapshot_destroy_without_gvl_args *args =
+        (struct snapshot_destroy_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->snapshot_destroy(args->data->container,
+                                                args->name)
+    );
 }
 
 /*
@@ -1711,24 +1753,27 @@ container_snapshot_destroy(VALUE self, VALUE rb_name)
 
     args.name = StringValuePtr(rb_name);
 
-    ret = WITHOUT_GVL_CALL(snapshot_destroy_without_gvl, &args);
+    ret = RELEASING_GVL(snapshot_destroy_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to destroy snapshot");
 
     return self;
 }
 
-struct snapshot_list_without_gvl_args
-{
+struct snapshot_list_without_gvl_args {
     struct container_data *data;
     struct lxc_snapshot *snapshots;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 snapshot_list_without_gvl(void *args_void)
 {
-    struct snapshot_list_without_gvl_args *args = (struct snapshot_list_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->snapshot_list(args->data->container, &args->snapshots));
+    struct snapshot_list_without_gvl_args *args =
+        (struct snapshot_list_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->snapshot_list(args->data->container,
+                                             &args->snapshots)
+    );
 }
 
 /*
@@ -1746,7 +1791,7 @@ container_snapshot_list(VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    num_snapshots = WITHOUT_GVL_CALL(snapshot_list_without_gvl, &args);
+    num_snapshots = RELEASING_GVL(snapshot_list_without_gvl, &args);
     if (num_snapshots < 0)
         rb_raise(Error, "unable to list snapshots");
 
@@ -1764,18 +1809,22 @@ container_snapshot_list(VALUE self)
     return rb_snapshots;
 }
 
-struct snapshot_restore_without_gvl_args
-{
+struct snapshot_restore_without_gvl_args {
     struct container_data *data;
     char *name;
     char *new_name;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 snapshot_restore_without_gvl(void *args_void)
 {
-    struct snapshot_restore_without_gvl_args *args = (struct snapshot_restore_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->snapshot_restore(args->data->container, args->name, args->new_name));
+    struct snapshot_restore_without_gvl_args *args =
+        (struct snapshot_restore_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->snapshot_restore(args->data->container,
+                                                args->name,
+                                                args->new_name)
+    );
 }
 
 /*
@@ -1797,7 +1846,7 @@ container_snapshot_restore(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(snapshot_restore_without_gvl, &args);
+    ret = RELEASING_GVL(snapshot_restore_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "unable to restore snapshot");
 
@@ -1805,8 +1854,7 @@ container_snapshot_restore(int argc, VALUE *argv, VALUE self)
 }
 
 
-struct start_without_gvl_args
-{
+struct start_without_gvl_args {
     struct container_data *data;
     int use_init;
     int daemonize;
@@ -1814,14 +1862,17 @@ struct start_without_gvl_args
     char **args;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 start_without_gvl(void *args_void)
 {
-    struct start_without_gvl_args *args = (struct start_without_gvl_args *)args_void;
+    struct start_without_gvl_args *args =
+        (struct start_without_gvl_args *)args_void;
     struct lxc_container *container = args->data->container;
     container->want_close_all_fds(container, args->close_fds);
     container->want_daemonize(container, args->daemonize);
-    return WITHOUT_GVL_RESULT(container->start(container, args->use_init, args->args));
+    RETURN_WITHOUT_GVL(
+        container->start(container, args->use_init, args->args)
+    );
 }
 
 /*
@@ -1866,7 +1917,7 @@ container_start(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(start_without_gvl, &args);
+    ret = RELEASING_GVL(start_without_gvl, &args);
 
     if (!NIL_P(rb_args))
         free_c_string_array(args.args);
@@ -1877,11 +1928,11 @@ container_start(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 stop_without_gvl(void *data_void)
 {
     struct container_data *data = (struct container_data *)data_void;
-    return WITHOUT_GVL_RESULT(data->container->stop(data->container));
+    RETURN_WITHOUT_GVL(data->container->stop(data->container));
 }
 
 /*
@@ -1898,18 +1949,18 @@ container_stop(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = WITHOUT_GVL_CALL(stop_without_gvl, data);
+    ret = RELEASING_GVL(stop_without_gvl, data);
     if (!ret)
         rb_raise(Error, "unable to stop container");
 
     return self;
 }
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 unfreeze_without_gvl(void *data_void)
 {
-  struct container_data *data = (struct container_data *)data_void;
-  return WITHOUT_GVL_RESULT(data->container->unfreeze(data->container));
+    struct container_data *data = (struct container_data *)data_void;
+    RETURN_WITHOUT_GVL(data->container->unfreeze(data->container));
 }
 
 /*
@@ -1926,25 +1977,28 @@ container_unfreeze(VALUE self)
 
     Data_Get_Struct(self, struct container_data, data);
 
-    ret = WITHOUT_GVL_CALL(unfreeze_without_gvl, data);
+    ret = RELEASING_GVL(unfreeze_without_gvl, data);
     if (!ret)
-        rb_raise(Error, "unable to unfreeze container: #{lxc_strerror(ret)}");
+        rb_raise(Error, "unable to unfreeze container: %s", lxc_strerror(ret));
 
     return self;
 }
 
-struct wait_without_gvl_args
-{
+struct wait_without_gvl_args {
     struct container_data *data;
     int timeout;
     char *state;
 };
 
-static WITHOUT_GVL_RESULT_TYPE
+static RETURN_WITHOUT_GVL_TYPE
 wait_without_gvl(void *args_void)
 {
-    struct wait_without_gvl_args *args = (struct wait_without_gvl_args *)args_void;
-    return WITHOUT_GVL_RESULT(args->data->container->wait(args->data->container, args->state, args->timeout));
+    struct wait_without_gvl_args *args =
+        (struct wait_without_gvl_args *)args_void;
+    RETURN_WITHOUT_GVL(
+        args->data->container->wait(args->data->container, args->state,
+                                    args->timeout)
+    );
 }
 
 /*
@@ -1971,7 +2025,7 @@ container_wait(int argc, VALUE *argv, VALUE self)
 
     Data_Get_Struct(self, struct container_data, args.data);
 
-    ret = WITHOUT_GVL_CALL(wait_without_gvl, &args);
+    ret = RELEASING_GVL(wait_without_gvl, &args);
     if (!ret)
         rb_raise(Error, "error waiting for container");
 
