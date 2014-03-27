@@ -51,4 +51,16 @@ class TestLXCCreated < Test::Unit::TestCase
     rerenamed = renamed.rename(@name)
     assert_equal(@name, rerenamed.name)
   end
+
+  def test_start
+    @container.stop if @container.running?
+    @container.start
+    assert(@container.running?)
+  end
+
+  def test_start_with_args
+    @container.stop if @container.running?
+    @container.start(:close_fds => true)
+    assert(@container.running?)
+  end
 end

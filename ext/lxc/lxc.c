@@ -1903,16 +1903,20 @@ container_start(int argc, VALUE *argv, VALUE self)
     if (!NIL_P(rb_opts)) {
         Check_Type(rb_opts, T_HASH);
         rb_use_init = rb_hash_aref(rb_opts, SYMBOL("use_init"));
-        args.use_init = (rb_use_init != Qnil) && (rb_use_init != Qfalse);
+        if (!NIL_P(rb_use_init))
+            args.use_init = (rb_use_init != Qfalse);
 
         rb_daemonize = rb_hash_aref(rb_opts, SYMBOL("daemonize"));
-        args.daemonize = (rb_daemonize != Qnil) && (rb_daemonize != Qfalse);
+        if (!NIL_P(rb_daemonize))
+            args.daemonize = (rb_daemonize != Qfalse);
 
         rb_close_fds = rb_hash_aref(rb_opts, SYMBOL("close_fds"));
-        args.close_fds = (rb_close_fds != Qnil) && (rb_close_fds != Qfalse);
+        if (!NIL_P(rb_close_fds))
+            args.close_fds = (rb_close_fds != Qfalse);
 
         rb_args = rb_hash_aref(rb_opts, SYMBOL("args"));
-        args.args = NIL_P(rb_args) ? NULL : ruby_to_c_string_array(rb_args);
+        if (!NIL_P(rb_args))
+            args.args = ruby_to_c_string_array(rb_args);
     }
 
     Data_Get_Struct(self, struct container_data, args.data);
