@@ -25,7 +25,7 @@ extern void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
     rb_thread_call_without_gvl(func, arg, NULL, NULL)
 #elif defined(HAVE_RB_THREAD_BLOCKING_REGION)
 #define RETURN_WITHOUT_GVL_TYPE VALUE
-#define RETURN_WITHOUT_GVL(x) INT2NUM(x)
+#define RETURN_WITHOUT_GVL(x) return INT2NUM(x)
 #define RELEASING_GVL(func, arg) \
     NUM2INT(rb_thread_blocking_region(func, arg, NULL, NULL))
 #define RELEASING_GVL2(func, arg, killfunc, killarg) \
@@ -34,7 +34,7 @@ extern void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
     rb_thread_blocking_region(func, arg, NULL, NULL)
 #else
 #define RETURN_WITHOUT_GVL_TYPE int
-#define RETURN_WITHOUT_GVL(x) x
+#define RETURN_WITHOUT_GVL(x) return x
 #define RELEASING_GVL(func, arg) func(arg)
 #define RELEASING_GVL_VOID(func, arg) func(arg)
 #define RELEASING_GVL2(func, arg, killfunc, killarg) func(arg)
