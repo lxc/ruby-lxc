@@ -1078,18 +1078,27 @@ container_create(int argc, VALUE *argv, VALUE self)
         thinpool = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("thinpool")));
         dir      = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("dir")));
 
-        spec.fstype = StringValuePtr(fstype);
-        spec.fssize = NUM2ULONG(fssize);
-        spec.zfs.zfsroot = StringValuePtr(zfsroot);
-        spec.lvm.lv = StringValuePtr(lvname);
-        spec.lvm.vg = StringValuePtr(vgname);
-        spec.lvm.thinpool = StringValuePtr(thinpool);
-        spec.dir    = StringValuePtr(dir);
+        if (!NIL_P(fstype))
+            spec.fstype = StringValuePtr(fstype);
+        if (!NIL_P(fssize))
+            spec.fssize = NUM2ULONG(fssize);
+        if (!NIL_P(zfsroot))
+            spec.zfs.zfsroot = StringValuePtr(zfsroot);
+        if (!NIL_P(lvname))
+            spec.lvm.lv = StringValuePtr(lvname);
+        if (!NIL_P(vgname))
+            spec.lvm.vg = StringValuePtr(vgname);
+        if (!NIL_P(thinpool))
+            spec.lvm.thinpool = StringValuePtr(thinpool);
+        if (!NIL_P(dir))
+            spec.dir = StringValuePtr(dir);
 
-    }
+        args.bdevspecs = &spec;
+
+    } else { args.bdevspecs = NULL; }
 
     args.template  = StringValuePtr(rb_template);
-    args.bdevspecs = &spec;
+
     args.bdevtype  = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
     args.flags     = NIL_P(rb_flags) ? 0 : NUM2INT(rb_flags);
     if (!NIL_P(rb_args))
