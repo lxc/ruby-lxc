@@ -51,6 +51,20 @@ struct container_data {
     struct lxc_container *container;
 };
 
+struct bdev_specs {
+    char *fstype;
+    uint64_t fssize;  // fs size in bytes
+    struct {
+        char *zfsroot;
+    } zfs;
+    struct {
+        char *vg;
+        char *lv;
+        char *thinpool; // lvm thin pool to use, if any
+    } lvm;
+    char *dir;
+};
+
 static char **
 ruby_to_c_string_array(VALUE rb_arr)
 {
@@ -1010,6 +1024,7 @@ struct container_create_without_gvl_args {
     struct container_data *data;
     char *template;
     char *bdevtype;
+    struct bdev_specs *bdevspecs;
     int flags;
     char **args;
 };
@@ -1021,14 +1036,14 @@ container_create_without_gvl(void *args_void)
         (struct container_create_without_gvl_args *)args_void;
     RETURN_WITHOUT_GVL(
         args->data->container->create(args->data->container, args->template,
-                                      args->bdevtype, NULL, args->flags,
+                                      args->bdevtype, args->bdevspecs, args->flags,
                                       args->args)
     );
 }
 
 /*
  * call-seq:
- *   container.create(template, bdevtype = nil, flags = 0, args = [])
+ *   container.create(template, bdevtype = nil, bdevspecs = {}, flags = 0, args = [])
  *
  * Creates a structure for the container according to the given template.
  * This usually consists of downloading and installing a Linux distribution
@@ -1040,17 +1055,43 @@ static VALUE
 container_create(int argc, VALUE *argv, VALUE self)
 {
     int ret;
-    VALUE rb_template, rb_bdevtype, rb_flags, rb_args;
+    struct bdev_specs spec;
+
+    VALUE rb_template, rb_bdevtype, rb_bdevspecs, rb_flags, rb_args;
+    VALUE fstype, fssize, zfsroot, lvname, vgname, thinpool,  dir;
     struct container_create_without_gvl_args args;
     char **default_args = { NULL };
 
     args.args = default_args;
-    rb_scan_args(argc, argv, "13",
-                 &rb_template, &rb_bdevtype, &rb_flags, &rb_args);
+    rb_scan_args(argc, argv, "14",
+                 &rb_template, &rb_bdevtype, &rb_bdevspecs, &rb_flags, &rb_args);
 
-    args.template = StringValuePtr(rb_template);
-    args.bdevtype = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
-    args.flags = NIL_P(rb_flags) ? 0 : NUM2INT(rb_flags);
+    if (!NIL_P(rb_bdevspecs)) {
+
+        memset(&spec, 0, sizeof(spec));
+
+        fstype   = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("fstype")));
+        fssize   = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("fssize")));
+        zfsroot  = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("zfsroot")));
+        lvname   = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("lvname")));
+        vgname   = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("vgname")));
+        thinpool = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("thinpool")));
+        dir      = rb_hash_aref(rb_bdevspecs, ID2SYM(rb_intern("dir")));
+
+        spec.fstype = StringValuePtr(fstype);
+        spec.fssize = NUM2ULONG(fssize);
+        spec.zfs.zfsroot = StringValuePtr(zfsroot);
+        spec.lvm.lv = StringValuePtr(lvname);
+        spec.lvm.vg = StringValuePtr(vgname);
+        spec.lvm.thinpool = StringValuePtr(thinpool);
+        spec.dir    = StringValuePtr(dir);
+
+    }
+
+    args.template  = StringValuePtr(rb_template);
+    args.bdevspecs = &spec;
+    args.bdevtype  = NIL_P(rb_bdevtype) ? NULL : StringValuePtr(rb_bdevtype);
+    args.flags     = NIL_P(rb_flags) ? 0 : NUM2INT(rb_flags);
     if (!NIL_P(rb_args))
         args.args = ruby_to_c_string_array(rb_args);
 
