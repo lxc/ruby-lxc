@@ -1,0 +1,14 @@
+Source: ruby-lxc
+Section: ruby
+Priority: optional
+Maintainer: Andre Nathan <andrenth@gmail.com>
+Build-Depends: debhelper (>= 7.0.50~), gem2deb (>= 0.2.3~)
+Standards-Version: 3.9.5
+XS-Ruby-Versions: all
+
+Package: ruby-lxc
+Architecture: any
+XB-Ruby-Versions: ${ruby:Versions}
+Depends: ${misc:Depends}, ${shlibs:Depends}, ruby | ruby-interpreter, lxc-dev
+Description: Ruby bindings for liblxc
+ This package provides liblxc bindings for the Ruby programming language.

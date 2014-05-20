@@ -1,0 +1,9 @@
+Format: http://anonscm.debian.org/viewvc/dep/web/deps/dep5.mdwn?revision=173
+Upstream-Name: ruby-lxc
+
+Files: *
+Copyright: Copyright 2014 Andre Nathan <andrenth@gmail.com>
+License: LGPL-2.1
+ On Debian systems, the full text of the GNU General Public
+ License version 2 can be found in the file
+ `/usr/share/common-licenses/LGPL-2.1'.
