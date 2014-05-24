@@ -13,7 +13,8 @@ simply run the commands below
 ```sh
 bundle install
 bundle exec rake compile
-gem install pkg/ruby-lxc-1.0.2.gem
+bundle exec rake gem
+gem install pkg/ruby-lxc-1.1.0.gem
 ```
 or just add this to your ```Gemfile```
 ```ruby
