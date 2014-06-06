@@ -1238,6 +1238,9 @@ container_config_item(VALUE self, VALUE rb_key)
     if (len1 < 0)
         rb_raise(Error, "invalid configuration key: %s", key);
 
+    if (len1 == 0)
+        return Qnil;
+
     value = malloc(sizeof(char) * len1 + 1);
     if (value == NULL)
         rb_raise(rb_eNoMemError, "unable to allocate configuration value");
@@ -2121,7 +2124,7 @@ Init_lxc(void)
     rb_define_method(Container, "add_device_node",
                      container_add_device_node, -1);
     rb_define_method(Container, "attach", container_attach, -1);
-    rb_define_method(Container, "clear_config", container_clear_config, -1);
+    rb_define_method(Container, "clear_config", container_clear_config, 0);
     rb_define_method(Container, "clear_config_item",
                      container_clear_config_item, 1);
     rb_define_method(Container, "clone", container_clone, -1);
