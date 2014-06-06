@@ -28,6 +28,7 @@ class TestLXCCreated < Test::Unit::TestCase
 
   def test_container_configuration
     capdrop = @container.config_item('lxc.cap.drop')
+    assert_instance_of(Array, @container.config_item('lxc.cap.drop'))
     @container.clear_config_item('lxc.cap.drop')
     @container.set_config_item('lxc.cap.drop', capdrop[0...-1])
     @container.set_config_item('lxc.cap.drop', capdrop[-1])
@@ -38,6 +39,15 @@ class TestLXCCreated < Test::Unit::TestCase
   def test_container_networking
     assert(@container.keys('lxc.network.0').include?('name'))
     assert_match(/^00:16:3e:/, @container.config_item('lxc.network.0.hwaddr'))
+  end
+
+  def test_clear_config
+      assert_not_nil(@container.config_item('lxc.utsname'))
+      assert(@container.clear_config)
+
+      assert_raise(LXC::Error) do 
+        @container.config_item('lxc.utsname').nil?
+      end
   end
 
   def test_container_mount_points

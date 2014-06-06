@@ -2121,7 +2121,7 @@ Init_lxc(void)
     rb_define_method(Container, "add_device_node",
                      container_add_device_node, -1);
     rb_define_method(Container, "attach", container_attach, -1);
-    rb_define_method(Container, "clear_config", container_clear_config, -1);
+    rb_define_method(Container, "clear_config", container_clear_config, 0);
     rb_define_method(Container, "clear_config_item",
                      container_clear_config_item, 1);
     rb_define_method(Container, "clone", container_clone, -1);
