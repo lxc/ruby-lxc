@@ -41,6 +41,26 @@ class TestLXCCreated < Test::Unit::TestCase
     assert_match(/^00:16:3e:/, @container.config_item('lxc.network.0.hwaddr'))
   end
 
+  def test_container_fstab
+    config_path = @container.config_path + '/' + @name + '/config'
+    fstab_path  = @container.config_path + '/' + @name + '/fstab'
+
+    @container.set_config_item('lxc.mount', fstab_path)
+    @container.save_config(config_path)
+
+    assert_instance_of(String, @container.config_item('lxc.mount'))
+    assert_not_nil(@container.config_item('lxc.mount'))
+
+    f = File.readlines(config_path)
+    f.reject! { |l| /^lxc\.mount = (.*)$/ =~ l }
+    File.write(config_path, f.join)
+
+    @container.clear_config
+    @container.load_config(config_path)
+
+    assert(@container.config_item('lxc.mount').nil?)
+  end
+
   def test_clear_config
       assert_not_nil(@container.config_item('lxc.utsname'))
       assert(@container.clear_config)

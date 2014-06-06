@@ -1238,6 +1238,9 @@ container_config_item(VALUE self, VALUE rb_key)
     if (len1 < 0)
         rb_raise(Error, "invalid configuration key: %s", key);
 
+    if (len1 == 0)
+        return Qnil;
+
     value = malloc(sizeof(char) * len1 + 1);
     if (value == NULL)
         rb_raise(rb_eNoMemError, "unable to allocate configuration value");
