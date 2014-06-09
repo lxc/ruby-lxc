@@ -51,20 +51,6 @@ struct container_data {
     struct lxc_container *container;
 };
 
-struct bdev_specs {
-    char *fstype;
-    uint64_t fssize;  // fs size in bytes
-    struct {
-        char *zfsroot;
-    } zfs;
-    struct {
-        char *vg;
-        char *lv;
-        char *thinpool; // lvm thin pool to use, if any
-    } lvm;
-    char *dir;
-};
-
 static char **
 ruby_to_c_string_array(VALUE rb_arr)
 {
