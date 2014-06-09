@@ -440,6 +440,15 @@ container_running_p(VALUE self)
  *   container.state
  *
  * Returns a symbol representing the state of the container.
+ *
+ * * +:stopped+
+ * * +:starting+
+ * * +:running+
+ * * +:stopping+
+ * * +:aborting+
+ * * +:freezing+
+ * * +:frozen+
+ * * +:thawed+
  */
 static VALUE
 container_state(VALUE self)
@@ -1277,6 +1286,9 @@ container_config_path(VALUE self)
  *   container.keys(key)
  *
  * Returns a list of valid sub-keys for the given configuration key.
+ * Support 'lxc.network.<idx>', i.e. 'lxc.network.0'
+ * This is an intelligent result to show which keys are valid given
+ * the type of nic it is
  */
 static VALUE
 container_keys(VALUE self, VALUE rb_key)
