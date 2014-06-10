@@ -440,6 +440,15 @@ container_running_p(VALUE self)
  *   container.state
  *
  * Returns a symbol representing the state of the container.
+ *
+ * * +:stopped+
+ * * +:starting+
+ * * +:running+
+ * * +:stopping+
+ * * +:aborting+
+ * * +:freezing+
+ * * +:frozen+
+ * * +:thawed+
  */
 static VALUE
 container_state(VALUE self)
@@ -1277,6 +1286,10 @@ container_config_path(VALUE self)
  *   container.keys(key)
  *
  * Returns a list of valid sub-keys for the given configuration key.
+ *
+ * Keys can be in the format 'lxc.network.<idx>', (eg. 'lxc.network.0',
+ * 'lxc.network.1'). The result shows which keys are valid according to
+ * type of network interface.
  */
 static VALUE
 container_keys(VALUE self, VALUE rb_key)
