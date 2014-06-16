@@ -1,5 +1,7 @@
 # Ruby-LXC
 
+[![Build Status](https://travis-ci.org/lxc/ruby-lxc.svg?branch=master)](https://travis-ci.org/lxc/ruby-lxc)
+
 ## Introduction
 
 Ruby-LXC is a Ruby binding for liblxc. It allows the creation and management
