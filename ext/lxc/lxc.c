@@ -569,6 +569,7 @@ lxc_attach_free_options(lxc_attach_options_t *opts)
 static lxc_attach_options_t *
 lxc_attach_parse_options(VALUE rb_opts)
 {
+    char *error = NULL;
     lxc_attach_options_t default_opts = LXC_ATTACH_OPTIONS_DEFAULT;
     lxc_attach_options_t *opts;
     VALUE rb_attach_flags, rb_namespaces, rb_personality, rb_initial_cwd;
@@ -583,96 +584,125 @@ lxc_attach_parse_options(VALUE rb_opts)
     if (NIL_P(rb_opts))
         return opts;
 
+    error = NULL;
+
     rb_attach_flags = rb_hash_aref(rb_opts, SYMBOL("flags"));
     if (!NIL_P(rb_attach_flags)) {
-        if (is_integer(rb_attach_flags))
+        if (is_integer(rb_attach_flags)) {
             opts->attach_flags = NUM2INT(rb_attach_flags);
-        else
+        } else {
+            error = "flags must be an integer";
             goto err;
+        }
     }
     rb_namespaces = rb_hash_aref(rb_opts, SYMBOL("namespaces"));
     if (!NIL_P(rb_namespaces)) {
-        if (is_integer(rb_namespaces))
+        if (is_integer(rb_namespaces)) {
             opts->namespaces = NUM2INT(rb_namespaces);
-        else
+        } else {
+            error = "namespaces must be an integer";
             goto err;
+        }
     }
     rb_personality = rb_hash_aref(rb_opts, SYMBOL("personality"));
     if (!NIL_P(rb_personality)) {
-        if (is_integer(rb_personality))
+        if (is_integer(rb_personality)) {
             opts->personality = NUM2INT(rb_personality);
-        else
+        } else {
+            error = "personality must be an integer";
             goto err;
+        }
     }
     rb_initial_cwd = rb_hash_aref(rb_opts, SYMBOL("initial_cwd"));
     if (!NIL_P(rb_initial_cwd)) {
-        if (is_string(rb_initial_cwd))
+        if (is_string(rb_initial_cwd)) {
             opts->initial_cwd = StringValuePtr(rb_initial_cwd);
-        else
+        } else {
+            error = "initial_cwd must be a string";
             goto err;
+        }
     }
     rb_uid = rb_hash_aref(rb_opts, SYMBOL("uid"));
     if (!NIL_P(rb_uid)) {
-        if (is_integer(rb_uid))
+        if (is_integer(rb_uid)) {
             opts->uid = NUM2INT(rb_uid);
-        else
+        } else {
+            error = "uid must be an integer";
             goto err;
+        }
     }
     rb_gid = rb_hash_aref(rb_opts, SYMBOL("gid"));
     if (!NIL_P(rb_gid)) {
-        if (is_integer(rb_gid))
+        if (is_integer(rb_gid)) {
             opts->gid = NUM2INT(rb_gid);
-        else
+        } else {
+            error = "gid must be an integer";
             goto err;
+        }
     }
     rb_env_policy = rb_hash_aref(rb_opts, SYMBOL("env_policy"));
     if (!NIL_P(rb_env_policy)) {
-        if (is_integer(rb_env_policy))
+        if (is_integer(rb_env_policy)) {
             opts->env_policy = NUM2INT(rb_env_policy);
-        else
+        } else {
+            error = "env_policy must be an integer";
             goto err;
+        }
     }
     rb_extra_env_vars = rb_hash_aref(rb_opts, SYMBOL("extra_env_vars"));
     if (!NIL_P(rb_extra_env_vars)) {
-        if (is_string_array(rb_extra_env_vars))
+        if (is_string_array(rb_extra_env_vars)) {
             opts->extra_env_vars = ruby_to_c_string_array(rb_extra_env_vars);
-        else
+        } else {
+            error = "extra_env_vars must be a array of strings";
             goto err;
+        }
     }
     rb_extra_keep_env = rb_hash_aref(rb_opts, SYMBOL("extra_keep_env"));
     if (!NIL_P(rb_extra_keep_env)) {
-        if (is_string_array(rb_extra_keep_env))
+        if (is_string_array(rb_extra_keep_env)) {
             opts->extra_keep_env = ruby_to_c_string_array(rb_extra_keep_env);
-        else
+        } else {
+            error = "extra_keep_env must be a array of strings";
             goto err;
+        }
     }
     rb_stdin = rb_hash_aref(rb_opts, SYMBOL("stdin"));
     if (!NIL_P(rb_stdin)) {
-        if (has_file_descriptor(rb_stdin))
+        if (has_file_descriptor(rb_stdin)) {
             opts->stdin_fd = io_fileno(rb_stdin);
-        else
+        } else {
+            error = "stdin object must have a file descriptor";
             goto err;
+        }
     }
     rb_stdout = rb_hash_aref(rb_opts, SYMBOL("stdout"));
     if (!NIL_P(rb_stdout)) {
-        if (has_file_descriptor(rb_stdout))
+        if (has_file_descriptor(rb_stdout)) {
             opts->stdout_fd = io_fileno(rb_stdout);
-        else
+        } else {
+            error = "stdout object must have a file descriptor";
             goto err;
+        }
     }
     rb_stderr = rb_hash_aref(rb_opts, SYMBOL("stderr"));
     if (!NIL_P(rb_stderr)) {
-        if (has_file_descriptor(rb_stderr))
+        if (has_file_descriptor(rb_stderr)) {
             opts->stderr_fd = io_fileno(rb_stderr);
-        else
+        } else {
+            error = "stderr object must have a file descriptor";
             goto err;
+        }
     }
 
     return opts;
 
 err:
     lxc_attach_free_options(opts);
-    return NULL;
+    if (error != NULL)
+        rb_raise(rb_eArgError, "%s", error);
+    else
+        return NULL;
 }
 
 static RETURN_WITHOUT_GVL_TYPE
