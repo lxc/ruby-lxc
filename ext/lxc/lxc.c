@@ -546,10 +546,10 @@ is_string_array(VALUE v)
 }
 
 static int
-is_io(VALUE v)
+has_file_descriptor(VALUE v)
 {
-    return rb_respond_to(v, rb_intern("sysread")) &&
-           rb_respond_to(v, rb_intern("syswrite"));
+    return rb_respond_to(v, rb_intern("fileno")) &&
+           rb_funcall(v, rb_intern("fileno"), 0) != Qnil;
 }
 
 static void
@@ -648,21 +648,21 @@ lxc_attach_parse_options(VALUE rb_opts)
     }
     rb_stdin = rb_hash_aref(rb_opts, SYMBOL("stdin"));
     if (!NIL_P(rb_stdin)) {
-        if (is_io(rb_stdin))
+        if (has_file_descriptor(rb_stdin))
             opts->stdin_fd = io_fileno(rb_stdin);
         else
             goto err;
     }
     rb_stdout = rb_hash_aref(rb_opts, SYMBOL("stdout"));
     if (!NIL_P(rb_stdout)) {
-        if (is_io(rb_stdout))
+        if (has_file_descriptor(rb_stdout))
             opts->stdout_fd = io_fileno(rb_stdout);
         else
             goto err;
     }
     rb_stderr = rb_hash_aref(rb_opts, SYMBOL("stderr"));
     if (!NIL_P(rb_stderr)) {
-        if (is_io(rb_stderr))
+        if (has_file_descriptor(rb_stderr))
             opts->stderr_fd = io_fileno(rb_stderr);
         else
             goto err;
