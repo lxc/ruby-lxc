@@ -16,5 +16,6 @@ script:
   - bundle exec rake clean package
 
 notifications:
+  webhooks: https://linuxcontainers.org/webhook-lxcbot/
   email:
     - andrenth@gmail.com
