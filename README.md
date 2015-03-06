@@ -13,6 +13,8 @@ Assuming a current installation of LXC is available, to install Ruby-LXC
 simply run the commands below
 
 ```sh
+sudo apt-get install ruby-dev lxc-dev
+
 bundle install
 bundle exec rake compile
 bundle exec rake gem
@@ -27,6 +29,7 @@ gem "ruby-lxc", github: "lxc/ruby-lxc", require: "lxc"
 
 - Container lifecycle management (create, start, stop and destroy containers)
 ```ruby
+require 'lxc'
 c = LXC::Container.new('foo')
 c.create('ubuntu') # create a container named foo with ubuntu template
 c.start
