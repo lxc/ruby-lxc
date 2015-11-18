@@ -72,7 +72,8 @@ module LXC
           end
         end
 
-        opts[:bdir].each do |host_entry, container_entry|
+        bind_directories = opts[:bdir].nil? ? [] : opts[:bdir]
+        bind_directories.each do |host_entry, container_entry|
           if Dir.exists?(host_entry)
             src_path = File.absolute_path(host_entry)
             dst_path = File.join(dest_path, 'rootfs', container_entry)
