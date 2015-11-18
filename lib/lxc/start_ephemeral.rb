@@ -1,10 +1,12 @@
 module LXC
+  class ContainerError < StandardError; end
+
   class << self
     def start_ephemeral(original_container_name, target_container_name, opts={})
       orig = LXC::Container.new(original_container_name)
       dest = LXC::Container.new(target_container_name)
-      raise "#{original_container_name} is not present. Exiting.." unless orig.defined?
-      raise "#{target_container_name} is already present. Exiting.." if dest.defined?
+      raise ContainerError.new("#{original_container_name} is not present. Exiting..") unless orig.defined?
+      raise ContainerError.new("#{target_container_name} is already present. Exiting..") if dest.defined?
 
       dest_path = File.join(LXC.global_config_item('lxc.lxcpath'), target_container_name)
       Dir.mkdir(dest_path, 0770)
@@ -29,8 +31,11 @@ module LXC
       if !dest.wait(:running, 5)
         dest.stop
         dest.destroy if dest.defined?
-        raise "The container '#{dest.name}' failed to start."
+        raise ContainerError.new("The container '#{dest.name}' failed to start.")
       end
+
+    rescue => e
+      ContainerError.new("Unexpected error when starting container. The error was: #{e}")
     end
 
     private
