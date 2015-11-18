@@ -8,7 +8,6 @@ module LXC
 
       dest_path = File.join(LXC.global_config_item('lxc.lxcpath'), target_container_name)
       Dir.mkdir(dest_path, 0770)
-      overlay_dirs = [[orig.config_item("lxc.rootfs"), File.join(dest_path, "rootfs")]]
 
       dest.load_config(orig.config_file_name)
 
@@ -19,6 +18,39 @@ module LXC
         dest.set_config_item("lxc.network.#{index}.hwaddr", random_mac) if dest.config_item("lxc.network.#{index}.hwaddr")
       end
 
+      create_pre_mount(orig, dest, opts)
+
+      create_post_stop(orig, dest, opts)
+
+      dest.save_config
+
+      dest.start(daemonize: opts[:daemonize])
+
+      if !dest.wait(:running, 5)
+        dest.stop
+        dest.destroy if dest.defined?
+        raise "The container '#{dest.name}' failed to start."
+      end
+    end
+
+    private
+
+    def new_overlay?
+      @new_overlay ||= File.readlines('/proc/filesystems').include?("nodev\toverlay\n")
+    end
+
+    def random_mac
+      mac = [0x00, 0x16, 0x3e,
+             SecureRandom.random_number(0x7f),
+             SecureRandom.random_number(0xff),
+             SecureRandom.random_number(0xff)
+      ]
+      mac.map {|number| number.to_s(16) }.join(':')
+    end
+
+    def create_pre_mount(orig, dest, opts)
+      dest_path = File.join(LXC.global_config_item('lxc.lxcpath'), dest.name)
+      overlay_dirs = [[orig.config_item("lxc.rootfs"), File.join(dest_path, "rootfs")]]
       File.open(File.join(dest_path, 'pre-mount'), 'w+', 0755) do |pre_mount|
         pre_mount.puts "#!/bin/sh"
         pre_mount.puts %Q{LXC_DIR="#{dest_path}"}
@@ -62,37 +94,15 @@ module LXC
       end
 
       dest.set_config_item("lxc.hook.pre-mount", File.join(dest_path, "pre-mount"))
+    end
 
+    def create_post_stop(orig, dest, opts)
+      dest_path = File.join(LXC.global_config_item('lxc.lxcpath'), dest.name)
       File.open(File.join(dest_path, 'post-stop'), 'w+', 0755) do |post_stop|
         post_stop.puts %Q{[ -d #{dest_path} ] && rm -Rf "#{dest_path}"}
       end
 
       dest.set_config_item("lxc.hook.post-stop", File.join(dest_path, "post-stop"))
-
-      dest.save_config
-
-      dest.start(daemonize: opts[:daemonize])
-
-      if !dest.wait(:running, 5)
-        dest.stop
-        dest.destroy if dest.defined?
-        raise "The container '#{dest.name}' failed to start."
-      end
-    end
-
-    private
-
-    def new_overlay?
-      @new_overlay ||= File.readlines('/proc/filesystems').include?("nodev\toverlay\n")
-    end
-
-    def random_mac
-      mac = [0x00, 0x16, 0x3e,
-             SecureRandom.random_number(0x7f),
-             SecureRandom.random_number(0xff),
-             SecureRandom.random_number(0xff)
-      ]
-      mac.map {|number| number.to_s(16) }.join(':')
     end
   end
 end
