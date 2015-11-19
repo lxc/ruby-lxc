@@ -28,7 +28,7 @@ module LXC
 
       dest.start(daemonize: opts[:daemonize])
 
-      if !dest.wait(:running, 5)
+      unless dest.wait(:running, 5)
         dest.stop
         dest.destroy if dest.defined?
         raise ContainerError.new("The container '#{dest.name}' failed to start.")
