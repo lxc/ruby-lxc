@@ -41,7 +41,7 @@ module LXC
     private
 
     def new_overlay?
-      @new_overlay ||= File.readlines('/proc/filesystems').include?("nodev\toverlay\n")
+      @new_overlay ||= File.open('/proc/filesystems').grep(/nodev\s+overlay/).any?
     end
 
     def random_mac
