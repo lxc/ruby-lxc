@@ -574,7 +574,7 @@ lxc_attach_parse_options(VALUE rb_opts)
     lxc_attach_options_t *opts;
     VALUE rb_attach_flags, rb_namespaces, rb_personality, rb_initial_cwd;
     VALUE rb_uid, rb_gid, rb_env_policy, rb_extra_env_vars, rb_extra_keep_env;
-    VALUE rb_stdin, rb_stdout, rb_stderr;
+    VALUE rb_stdin_opt, rb_stdout_opt, rb_stderr_opt;
 
     opts = malloc(sizeof(*opts));
     if (opts == NULL)
@@ -667,28 +667,28 @@ lxc_attach_parse_options(VALUE rb_opts)
             goto err;
         }
     }
-    rb_stdin = rb_hash_aref(rb_opts, SYMBOL("stdin"));
-    if (!NIL_P(rb_stdin)) {
-        if (has_file_descriptor(rb_stdin)) {
-            opts->stdin_fd = io_fileno(rb_stdin);
+    rb_stdin_opt = rb_hash_aref(rb_opts, SYMBOL("stdin"));
+    if (!NIL_P(rb_stdin_opt)) {
+        if (has_file_descriptor(rb_stdin_opt)) {
+            opts->stdin_fd = io_fileno(rb_stdin_opt);
         } else {
             error = "stdin object must have a file descriptor";
             goto err;
         }
     }
-    rb_stdout = rb_hash_aref(rb_opts, SYMBOL("stdout"));
-    if (!NIL_P(rb_stdout)) {
-        if (has_file_descriptor(rb_stdout)) {
-            opts->stdout_fd = io_fileno(rb_stdout);
+    rb_stdout_opt = rb_hash_aref(rb_opts, SYMBOL("stdout"));
+    if (!NIL_P(rb_stdout_opt)) {
+        if (has_file_descriptor(rb_stdout_opt)) {
+            opts->stdout_fd = io_fileno(rb_stdout_opt);
         } else {
             error = "stdout object must have a file descriptor";
             goto err;
         }
     }
-    rb_stderr = rb_hash_aref(rb_opts, SYMBOL("stderr"));
-    if (!NIL_P(rb_stderr)) {
-        if (has_file_descriptor(rb_stderr)) {
-            opts->stderr_fd = io_fileno(rb_stderr);
+    rb_stderr_opt = rb_hash_aref(rb_opts, SYMBOL("stderr"));
+    if (!NIL_P(rb_stderr_opt)) {
+        if (has_file_descriptor(rb_stderr_opt)) {
+            opts->stderr_fd = io_fileno(rb_stderr_opt);
         } else {
             error = "stderr object must have a file descriptor";
             goto err;
