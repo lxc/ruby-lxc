@@ -35,7 +35,7 @@ module LXC
       end
 
     rescue => e
-      ContainerError.new("Unexpected error when starting container. The error was: #{e}")
+      raise ContainerError.new("Unexpected error when starting container. The error was: #{e}")
     end
 
     private
