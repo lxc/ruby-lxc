@@ -42,7 +42,6 @@ extern void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
 
 extern int lxc_wait_for_pid_status(pid_t pid);
 extern long lxc_config_parse_arch(const char *arch);
-extern const char *lxc_strerror(int error);
 
 static VALUE Container;
 static VALUE Error;
@@ -2069,7 +2068,7 @@ container_unfreeze(VALUE self)
 
     ret = RELEASING_GVL(unfreeze_without_gvl, data);
     if (!ret)
-        rb_raise(Error, "unable to unfreeze container: %s", lxc_strerror(ret));
+        rb_raise(Error, "unable to unfreeze container");
 
     return self;
 }
