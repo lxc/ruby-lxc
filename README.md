@@ -34,9 +34,10 @@ c = LXC::Container.new('foo')
 c.create('ubuntu') # create a container named foo with ubuntu template
 c.start
 # attach to a running container
-c.attach do
+pid = c.attach do
   LXC.run_command('ifconfig eth0')
 end
+Process.wait(pid)
 c.stop
 c.destroy
 ```
