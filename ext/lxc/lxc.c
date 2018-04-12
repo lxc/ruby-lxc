@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 
 #define SYMBOL(s) ID2SYM(rb_intern(s))
 
