@@ -1,3 +1,9 @@
+ruby-lxc (1.2.3-0digirati1) trusty; urgency=low
+
+  * Version 1.2.3.
+
+ -- Andre Nathan <andre@digirati.com.br>  Mon, 10 Jul 2018 10:29:03 -0300
+
 ruby-lxc (1.2.2-0digirati1) trusty; urgency=low
 
   * Version 1.2.2.
