@@ -41,8 +41,6 @@ extern void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
 #define RELEASING_GVL2(func, arg, killfunc, killarg) func(arg)
 #endif
 
-extern int lxc_wait_for_pid_status(pid_t pid);
-
 static VALUE Container;
 static VALUE Error;
 
@@ -677,10 +675,30 @@ err:
         return NULL;
 }
 
-static RETURN_WITHOUT_GVL_TYPE
-lxc_wait_for_pid_status_without_gvl(void *pid)
+static int
+wait_for_pid_status(pid_t pid)
 {
-    RETURN_WITHOUT_GVL(lxc_wait_for_pid_status(*(pid_t*)pid));
+    int status, ret;
+
+again:
+    ret = waitpid(pid, &status, 0);
+    if (ret == -1) {
+            if (errno == EINTR)
+                    goto again;
+
+            return -1;
+    }
+
+    if (ret != pid)
+            goto again;
+
+    return status;
+}
+
+static RETURN_WITHOUT_GVL_TYPE
+wait_for_pid_status_without_gvl(void *pid)
+{
+    RETURN_WITHOUT_GVL(wait_for_pid_status(*(pid_t*)pid));
 }
 
 #if defined(HAVE_RB_THREAD_CALL_WITHOUT_GVL) || defined(HAVE_RB_THREAD_BLOCKING_REGION)
@@ -748,7 +766,7 @@ container_attach(int argc, VALUE *argv, VALUE self)
         goto out;
 
     if (wait) {
-        ret = RELEASING_GVL2(lxc_wait_for_pid_status_without_gvl, &pid,
+        ret = RELEASING_GVL2(wait_for_pid_status_without_gvl, &pid,
                              kill_pid_without_gvl, &pid);
         /* handle case where attach fails */
         if (WIFEXITED(ret) && WEXITSTATUS(ret) == 255)
