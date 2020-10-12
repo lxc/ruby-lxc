@@ -42,7 +42,6 @@ extern void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
 #endif
 
 extern int lxc_wait_for_pid_status(pid_t pid);
-extern long lxc_config_parse_arch(const char *arch);
 
 static VALUE Container;
 static VALUE Error;
@@ -89,33 +88,6 @@ free_c_string_array(char **arr)
  * a specific container instance) and methods related to +liblxc+. The
  * container-specific methods are contained in the +LXC::Container+ class.
  */
-
-/*
- * call-seq:
- *   LXC.arch_to_personality(arch)
- *
- * Converts an architecture string (x86, i686, x86_64 or amd64) to a
- * "personality", either +:linux32+ or +:linux+, for the 32-bit and 64-bit
- * architectures, respectively.
- */
-static VALUE
-lxc_arch_to_personality(VALUE self, VALUE rb_arch)
-{
-    int ret;
-    char *arch;
-
-    arch = StringValuePtr(rb_arch);
-    ret = lxc_config_parse_arch(arch);
-
-    switch (ret) {
-    case PER_LINUX32:
-        return SYMBOL("linux32");
-    case PER_LINUX:
-        return SYMBOL("linux");
-    default:
-        rb_raise(Error, "unknown personality");
-    }
-}
 
 /*
  * call-seq:
@@ -2127,8 +2099,6 @@ Init_lxc(void)
 {
     VALUE LXC = rb_define_module("LXC");
 
-    rb_define_singleton_method(LXC, "arch_to_personality",
-                               lxc_arch_to_personality, 1);
     rb_define_singleton_method(LXC, "run_command", lxc_run_command, 1);
     rb_define_singleton_method(LXC, "run_shell", lxc_run_shell, 0);
     rb_define_singleton_method(LXC, "global_config_item",
