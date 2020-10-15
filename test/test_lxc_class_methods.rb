@@ -17,9 +17,4 @@ class TestLXCClassMethods < Test::Unit::TestCase
   def test_list_containers
     assert(LXC.list_containers.include?('test'))
   end
-
-  def test_arch_to_personality
-    assert_equal(:linux32, LXC.arch_to_personality('x86'))
-    assert_equal(:linux, LXC.arch_to_personality('x86_64'))
-  end
 end
